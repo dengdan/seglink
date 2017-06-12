@@ -20,8 +20,6 @@ from datasets import dataset_factory
 from preprocessing import ssd_vgg_preprocessing
 from tf_extended import bboxes as tfe_bboxes
 import util
-from nets import seglink_symbol
-from nets import anchor_layer
 slim = tf.contrib.slim
 
 DATA_FORMAT = 'NHWC'
@@ -112,14 +110,6 @@ def main(_):
             gorbboxes = tfe_bboxes.tf_min_area_rect(gxs, gys)
             image = tf.identity(image, 'processed_image')
             
-            feat_layers = ['conv4_3','fc7', 'conv6_2', 'conv7_2', 'conv8_2', 'conv9_2', 'conv10_2']
-            
-            # shape reference                
-            fake_image = tf.ones((batch_size, FLAGS.train_image_size, FLAGS.train_image_size, 3))
-            fake_net = seglink_symbol.SegLinkNet(inputs = fake_image, feat_layers = feat_layers)
-            shapes = fake_net.get_shapes();
-            
-            anchors = anchor_layer.generate_anchors(image_shape = (FLAGS.train_image_size, FLAGS.train_image_size), feat_layers = feat_layers, feat_shapes = shapes)
             with tf.Session() as sess:
                 tf.train.start_queue_runners(sess)
                 i = 0

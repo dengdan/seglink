@@ -16,88 +16,10 @@
 """
 import numpy as np
 import tensorflow as tf
-
+import cv2
 from tf_extended import tensors as tfe_tensors
 from tf_extended import math as tfe_math
-
-
-# =========================================================================== #
-# Standard boxes algorithms.
-# =========================================================================== #
-def bboxes_sort_all_classes(classes, scores, bboxes, top_k=400, scope=None):
-    """Sort bounding boxes by decreasing order and keep only the top_k.
-    Assume the input Tensors mix-up objects with different classes.
-    Assume a batch-type input.
-
-    Args:
-      classes: Batch x N Tensor containing integer classes.
-      scores: Batch x N Tensor containing float scores.
-      bboxes: Batch x N x 4 Tensor containing boxes coordinates.
-      top_k: Top_k boxes to keep.
-    Return:
-      classes, scores, bboxes: Sorted tensors of shape Batch x Top_k.
-    """
-    with tf.name_scope(scope, 'bboxes_sort', [classes, scores, bboxes]):
-        scores, idxes = tf.nn.top_k(scores, k=top_k, sorted=True)
-
-        # Trick to be able to use tf.gather: map for each element in the batch.
-        def fn_gather(classes, bboxes, idxes):
-            cl = tf.gather(classes, idxes)
-            bb = tf.gather(bboxes, idxes)
-            return [cl, bb]
-        r = tf.map_fn(lambda x: fn_gather(x[0], x[1], x[2]),
-                      [classes, bboxes, idxes],
-                      dtype=[classes.dtype, bboxes.dtype],
-                      parallel_iterations=10,
-                      back_prop=False,
-                      swap_memory=False,
-                      infer_shape=True)
-        classes = r[0]
-        bboxes = r[1]
-        return classes, scores, bboxes
-
-
-def bboxes_sort(scores, bboxes, top_k=400, scope=None):
-    """Sort bounding boxes by decreasing order and keep only the top_k.
-    If inputs are dictionnaries, assume every key is a different class.
-    Assume a batch-type input.
-
-    Args:
-      scores: Batch x N Tensor/Dictionary containing float scores.
-      bboxes: Batch x N x 4 Tensor/Dictionary containing boxes coordinates.
-      top_k: Top_k boxes to keep.
-    Return:
-      scores, bboxes: Sorted Tensors/Dictionaries of shape Batch x Top_k x 1|4.
-    """
-    # Dictionaries as inputs.
-    if isinstance(scores, dict) or isinstance(bboxes, dict):
-        with tf.name_scope(scope, 'bboxes_sort_dict'):
-            d_scores = {}
-            d_bboxes = {}
-            for c in scores.keys():
-                s, b = bboxes_sort(scores[c], bboxes[c], top_k=top_k)
-                d_scores[c] = s
-                d_bboxes[c] = b
-            return d_scores, d_bboxes
-
-    # Tensors inputs.
-    with tf.name_scope(scope, 'bboxes_sort', [scores, bboxes]):
-        # Sort scores...
-        scores, idxes = tf.nn.top_k(scores, k=top_k, sorted=True)
-
-        # Trick to be able to use tf.gather: map for each element in the first dim.
-        def fn_gather(bboxes, idxes):
-            bb = tf.gather(bboxes, idxes)
-            return [bb]
-        r = tf.map_fn(lambda x: fn_gather(x[0], x[1]),
-                      [bboxes, idxes],
-                      dtype=[bboxes.dtype],
-                      parallel_iterations=10,
-                      back_prop=False,
-                      swap_memory=False,
-                      infer_shape=True)
-        bboxes = r[0]
-        return scores, bboxes
+import util
 
 
 def bboxes_clip(bbox_ref, bboxes, scope=None):
@@ -163,16 +85,11 @@ def bboxes_resize(bbox_ref, bboxes, name=None):
         return bboxes
 
 def oriented_bboxes_resize(bbox_ref, xs, ys, name=None):
-    """Resize bounding boxes based on a reference bounding box,
-    assuming that the latter is [0, 0, 1, 1] after transform. Useful for
-    updating a collection of boxes after cropping an image.
-    """
-
     # Tensors inputs.
     with tf.name_scope(name, 'bboxes_resize'):
         # Translate.
-        xs = xs - bbox_ref[0]
-        ys = ys - bbox_ref[1]
+        xs = xs - bbox_ref[1]
+        ys = ys - bbox_ref[0]
         # Scale.
         h_ref = bbox_ref[2] - bbox_ref[0]
         w_ref = bbox_ref[3] - bbox_ref[1]
@@ -422,9 +339,7 @@ def bboxes_filter_center(labels, bboxes,
         return labels, bboxes
 
 
-def bboxes_filter_overlap(labels, bboxes,
-                          threshold=0.5, assign_negative=False,
-                          scope=None):
+def bboxes_filter_overlap(labels, bboxes,xs, ys, threshold, scope=None, assign_negative = False):
     """Filter out bounding boxes based on (relative )overlap with reference
     box [0, 0, 1, 1].  Remove completely bounding boxes, or assign negative
     labels to the one outside (useful for latter processing...).
@@ -433,16 +348,18 @@ def bboxes_filter_overlap(labels, bboxes,
       labels, bboxes: Filtered (or newly assigned) elements.
     """
     with tf.name_scope(scope, 'bboxes_filter', [labels, bboxes]):
-        scores = bboxes_intersection(tf.constant([0, 0, 1, 1], bboxes.dtype),
-                                     bboxes)
+        scores = bboxes_intersection(tf.constant([0, 0, 1, 1], bboxes.dtype),bboxes)
+                    
         mask = scores > threshold
         if assign_negative:
             labels = tf.where(mask, labels, -labels)
-            # bboxes = tf.where(mask, bboxes, bboxes)
         else:
             labels = tf.boolean_mask(labels, mask)
             bboxes = tf.boolean_mask(bboxes, mask)
-        return labels, bboxes
+            scores = bboxes_intersection(tf.constant([0, 0, 1, 1], bboxes.dtype),bboxes)
+            xs = tf.boolean_mask(xs, mask);
+            ys = tf.boolean_mask(ys, mask);
+        return labels, bboxes, xs, ys
 
 
 def bboxes_filter_labels(labels, bboxes,
@@ -523,3 +440,100 @@ def bboxes_intersection(bbox_ref, bboxes, name=None):
         bboxes_vol = (bboxes[2] - bboxes[0]) * (bboxes[3] - bboxes[1])
         scores = tfe_math.safe_divide(inter_vol, bboxes_vol, 'intersection')
         return scores
+        
+def min_area_rect(xs, ys):
+    """
+    xs: numpy ndarray of shape N*4, [x1, x2, x3, x4]
+    ys: numpy ndarray of shape N*4, [y1, y2, y3, y4]
+    return the oriented rects sorrounding the box represented by [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
+    """
+    xs = np.asarray(xs, dtype = np.float32)
+    ys = np.asarray(ys, dtype = np.float32)
+    scaled = False
+    if np.max(xs) <= 1:
+        xs = xs * 1000.0
+        ys = ys * 1000.0
+        scaled = True
+        
+    num_rects = xs.shape[0]
+    box = np.empty((num_rects, 5))#cx, cy, w, h, theta
+    for idx in xrange(num_rects):
+        points = zip(xs[idx, :], ys[idx, :])
+        cnt = util.img.points_to_contour(points)
+        rect = cv2.minAreaRect(cnt)
+        cx, cy = rect[0]
+        w, h = rect[1]
+        theta = rect[2]
+        box[idx, :] = [cx, cy, w, h, theta]
+    
+    if scaled:
+        box = box / [1000, 1000, 1000, 1000, 1]
+    box = np.asarray(box, dtype = xs.dtype)
+    return box
+    
+def tf_min_area_rect(xs, ys):
+    return tf.py_func(min_area_rect, [xs, ys], xs.dtype)
+
+
+def rotate_oriented_bbox(center, bbox):
+    """
+    center: the center of rotation
+    bbox: [cx, cy, w, h, theta]
+    """
+    scaled = False
+        
+    bbox = np.asarray(bbox, dtype = np.float32)
+    if np.max(center) <= 1:
+       bbox = bbox * [1000, 1000, 1000, 1000, 1]
+       center = tuple(np.asarray(center) * [1000, 1000])
+       scaled = True
+    
+    cx, cy, w, h, theta = bbox[...];
+    M = cv2.getRotationMatrix2D(center, theta, scale = 1) # 2x3
+    
+    cx, cy = np.dot(M, np.transpose([cx, cy, 1]))
+    
+    xmin = cx - w / 2;
+    ymin = cy - h / 2;
+    xmax = cx + w / 2;
+    ymax = cy + h / 2;
+    
+    data = np.asarray([xmin, ymin, xmax, ymax])    
+    if scaled: 
+        data = data / 1000.0;   
+    return data    
+    
+    
+def _test_rotate_oriented_bbox():
+#    points = [[50, 50], [70, 50], [70, 10], [50, 10]]
+    points = [[50, 100], [150, 220], [200, 150], [100, 60]]
+    cnts = util.img.points_to_contours(points);
+    mask = util.img.black((300, 300, 3))
+    
+    # use white to draw the original contour
+    #util.img.draw_contours(mask, cnts, color = util.img.COLOR_WHITE)
+
+    # use red to draw the rotated bbox
+    rect = cv2.minAreaRect(cnts[0])
+    box = cv2.cv.BoxPoints(rect)
+    box = np.int0(box)
+    util.img.circle(mask, ((box[..., 0].min() + box[..., 0].max()) / 2, (box[..., 1].min() + box[..., 1].max()) / 2), 3, color = util.img.COLOR_RGB_RED)
+    cv2.drawContours(mask, [box], 0, util.img.COLOR_RGB_RED, 1)
+    
+    points = np.asarray(points)
+    points = np.expand_dims(points, 0)
+    xs = points[:, :, 0] / 300.0
+    ys = points[:, :, 1] / 300.0
+
+    orbbox = min_area_rect(xs, ys)[0, ...]
+    
+    bbox = rotate_oriented_bbox((0.5, 0.5), orbbox);
+    bbox = bbox * 300
+    xmin, ymin, xmax, ymax = bbox
+    util.img.circle(mask, (150, 150), 3, color = util.img.COLOR_WHITE)
+    util.img.circle(mask, ((xmin + xmax) / 2, (ymin + ymax) / 2), 3, color = util.img.COLOR_GREEN)
+    util.img.rectangle(mask, (xmin, ymin), (xmax, ymax), color = util.img.COLOR_GREEN)
+    util.sit(mask)
+    
+if __name__ == '__main__':
+    _test_rotate_oriented_bbox()

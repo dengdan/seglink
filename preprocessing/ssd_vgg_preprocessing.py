@@ -188,7 +188,7 @@ def distorted_bounding_box_crop(image,
 
     Args:
         image: 3-D Tensor of image (it will be converted to floats in [0, 1]).
-        bbox: 3-D float Tensor of bounding boxes arranged [1, num_boxes, coords]
+        bbox: 2-D float Tensor of bounding boxes arranged [num_boxes, coords]
             where each coordinate is [0, 1) and the coordinates are arranged
             as [ymin, xmin, ymax, xmax]. If num_boxes is 0 then it would use the whole
             image.
@@ -206,7 +206,7 @@ def distorted_bounding_box_crop(image,
     Returns:
         A tuple, a 3-D Tensor cropped_image and the distorted bbox
     """
-    with tf.name_scope(scope, 'distorted_bounding_box_crop', [image, bboxes]):
+    with tf.name_scope(scope, 'distorted_bounding_box_crop', [image, bboxes, xs, ys]):
         # Each bounding box has shape [1, num_boxes, box coords] and
         # the coordinates are ordered [ymin, xmin, ymax, xmax].
         bbox_begin, bbox_size, distort_bbox = tf.image.sample_distorted_bounding_box(
@@ -227,12 +227,9 @@ def distorted_bounding_box_crop(image,
         # Update bounding boxes: resize and filter out.
         bboxes = tfe.bboxes_resize(distort_bbox, bboxes)
         xs, ys = tfe.oriented_bboxes_resize(distort_bbox, xs, ys)
-        #TODO
-        labels, bboxes = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
-                                                   threshold=BBOX_CROP_OVERLAP,
-                                                   assign_negative=False)
-        bboxes = tf.clip_by_value(bboxes, 0.0, 1.0)
-        return cropped_image, labels, bboxes, distort_bbox
+        labels, bboxes, xs, ys = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
+                                                   threshold=BBOX_CROP_OVERLAP, assign_negative = True)
+        return cropped_image, labels, bboxes, xs, ys, distort_bbox
 
 
 def preprocess_for_train(image, labels, bboxes, xs, ys,
@@ -255,7 +252,7 @@ def preprocess_for_train(image, labels, bboxes, xs, ys,
     Returns:
         A preprocessed image.
     """
-    fast_mode = True
+    fast_mode = False
     with tf.name_scope(scope, 'ssd_preprocessing_train', [image, labels, bboxes]):
         if image.get_shape().ndims != 3:
             raise ValueError('Input must be of size [height, width, C>0]')
@@ -268,7 +265,7 @@ def preprocess_for_train(image, labels, bboxes, xs, ys,
         # Distort image and bounding boxes.
         dst_image = image
         dst_image, labels, bboxes, xs, ys, distort_bbox = \
-            distorted_bounding_box_crop(image, labels, bboxes, xs, ys
+            distorted_bounding_box_crop(image, labels, bboxes, xs, ys,
                                         min_object_covered=MIN_OBJECT_COVERED,
                                         aspect_ratio_range=CROP_ASPECT_RATIO_RANGE, 
                                         area_range=AREA_RANGE)
@@ -295,7 +292,7 @@ def preprocess_for_train(image, labels, bboxes, xs, ys,
         # Image data format.
         if data_format == 'NCHW':
             image = tf.transpose(image, perm=(2, 0, 1))
-        return image, labels, bboxes
+        return image, labels, bboxes, xs, ys
 
 
 def preprocess_for_eval(image, labels, bboxes, xs, ys,
@@ -365,7 +362,7 @@ def preprocess_for_eval(image, labels, bboxes, xs, ys,
         # Image data format.
         if data_format == 'NCHW':
             image = tf.transpose(image, perm=(2, 0, 1))
-        return image, labels, bboxes, bbox_img
+        return image, labels, bboxes, bbox_img, xs, ys
 
 
 def preprocess_image(image,
@@ -396,11 +393,11 @@ def preprocess_image(image,
       A preprocessed image.
     """
     if is_training:
-        return preprocess_for_train(image, labels, bboxes, xs, ys
+        return preprocess_for_train(image, labels, bboxes, xs, ys,
                                     out_shape=out_shape,
                                     data_format=data_format)
     else:
-        return preprocess_for_eval(image, labels, bboxes, xs, ys
+        return preprocess_for_eval(image, labels, bboxes, xs, ys,
                                    out_shape=out_shape,
                                    data_format=data_format,
                                    **kwargs)

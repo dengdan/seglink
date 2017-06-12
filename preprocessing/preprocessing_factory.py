@@ -25,7 +25,7 @@ from preprocessing import ssd_vgg_preprocessing
 slim = tf.contrib.slim
 
 
-def get_preprocessing(name, is_training=False):
+def get_preprocessing(is_training=False):
     """Returns preprocessing_fn(image, height, width, **kwargs).
 
     Args:
@@ -40,16 +40,11 @@ def get_preprocessing(name, is_training=False):
     Raises:
       ValueError: If Preprocessing `name` is not recognized.
     """
-    preprocessing_fn_map = {
-        'ssd_vgg': ssd_vgg_preprocessing
-    }
 
-    if name not in preprocessing_fn_map:
-        raise ValueError('Preprocessing name [%s] was not recognized' % name)
 
     def preprocessing_fn(image, labels, bboxes, xs, ys, 
                          out_shape, data_format='NHWC', **kwargs):
-        return preprocessing_fn_map[name].preprocess_image(
+        return ssd_vgg_preprocessing.preprocess_image(
             image, labels, bboxes, out_shape, xs, ys, data_format=data_format,
             is_training=is_training, **kwargs)
     return preprocessing_fn

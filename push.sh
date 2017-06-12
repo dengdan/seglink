@@ -1,4 +1,4 @@
 git add . --all
-git commit -m "first commit"
+git commit -m "add preprocessing, nets, and anchors"
 git push -u origin master
 
