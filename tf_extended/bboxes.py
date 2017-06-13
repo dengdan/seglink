@@ -474,15 +474,35 @@ def min_area_rect(xs, ys):
 def tf_min_area_rect(xs, ys):
     return tf.py_func(min_area_rect, [xs, ys], xs.dtype)
 
+def transform_cv_rect(rects):
+    """Transform the rects from opencv method minAreaRect to our rects. Step 1 of Figure 5 in seglink paper
+    rect: (5, ) or (N, 5)
+    """
+    if len(np.shape(rects)) == 1:
+        rects = np.expand_dims(rects, axis = 0)
+    assert np.shape(rects)[1] == 5, 'The shape of rects must be (N, 5), but meet %s'%(str(np.shape(rects)))
+    rects = np.asarray(rects, dtype = np.float32).copy()
+    num_rects = np.shape(rects)[0]
+    for idx in xrange(num_rects):
+        cx, cy, w, h, theta = rects[idx, ...];
+        assert theta < 0 and theta >= -90, "invalid theta: %f"%(theta) 
+        if abs(theta) > 45 or (abs(theta) == 45 and w < h):
+            w, h = [h, w]
+            theta = 90 + theta
+        rects[idx, ...] = [cx, cy, w, h, theta]
+    return rects                
+    
 
-def rotate_oriented_bbox(center, bbox):
+def rotate_oriented_bbox_to_horizontal(center, bbox):
     """
     center: the center of rotation
     bbox: [cx, cy, w, h, theta]
+    Step 2 of Figure 5 in seglink paper
     """
+    assert np.shape(center) == (2, ), "center must be a vector of length 2"
+    assert np.shape(bbox) == (5, ) or np.shape(bbox) == (4, ), "bbox must be a vector of length 4 or 5"
     scaled = False
-        
-    bbox = np.asarray(bbox, dtype = np.float32)
+    bbox = np.asarray(bbox.copy(), dtype = np.float32)
     if np.max(center) <= 1:
        bbox = bbox * [1000, 1000, 1000, 1000, 1]
        center = tuple(np.asarray(center) * [1000, 1000])
@@ -493,47 +513,122 @@ def rotate_oriented_bbox(center, bbox):
     
     cx, cy = np.dot(M, np.transpose([cx, cy, 1]))
     
-    xmin = cx - w / 2;
-    ymin = cy - h / 2;
-    xmax = cx + w / 2;
-    ymax = cy + h / 2;
-    
-    data = np.asarray([xmin, ymin, xmax, ymax])    
     if scaled: 
-        data = data / 1000.0;   
-    return data    
-    
-    
-def _test_rotate_oriented_bbox():
-#    points = [[50, 50], [70, 50], [70, 10], [50, 10]]
-    points = [[50, 100], [150, 220], [200, 150], [100, 60]]
-    cnts = util.img.points_to_contours(points);
-    mask = util.img.black((300, 300, 3))
-    
-    # use white to draw the original contour
-    #util.img.draw_contours(mask, cnts, color = util.img.COLOR_WHITE)
+        cx = cx / 1000.0;
+        cy = cy / 1000.0;
+    bbox[0:2] = [cx, cy]
+    return bbox
 
-    # use red to draw the rotated bbox
-    rect = cv2.minAreaRect(cnts[0])
-    box = cv2.cv.BoxPoints(rect)
-    box = np.int0(box)
-    util.img.circle(mask, ((box[..., 0].min() + box[..., 0].max()) / 2, (box[..., 1].min() + box[..., 1].max()) / 2), 3, color = util.img.COLOR_RGB_RED)
-    cv2.drawContours(mask, [box], 0, util.img.COLOR_RGB_RED, 1)
+def crop_horizontal_bbox_using_anchor(bbox, anchor):
+    """The step 3 in Figure 5 in seglink paper
+    """
+    assert np.shape(anchor) == (4, ), "anchor must be a vector of length 4"
+    assert np.shape(bbox) == (5, ) or np.shape(bbox) == (4, ), "bbox must be a vector of length 4 or 5"
+    acx, acy, aw, ah = anchor
+    axmin = acx - aw / 2.0;
+    axmax = acx + aw / 2.0;
     
-    points = np.asarray(points)
-    points = np.expand_dims(points, 0)
-    xs = points[:, :, 0] / 300.0
-    ys = points[:, :, 1] / 300.0
+    cx, cy, w, h = bbox[0:4]
+    xmin = cx - w / 2.0
+    xmax = cx + w / 2.0
+    
+    xmin = max(xmin, axmin)
+    xmax = min(xmax, axmax)
+    
+    cx = (xmin + xmax) / 2.0;
+    w = xmax - xmin
+    bbox = bbox.copy()
+    bbox[0:4] = [cx, cy, w, h]
+    return bbox
 
-    orbbox = min_area_rect(xs, ys)[0, ...]
+def rotate_horizontal_bbox_to_oriented(center, bbox):
+    """
+    center: the center of rotation
+    bbox: [cx, cy, w, h, theta]
+    Step 4 of Figure 5 in seglink paper
+    """
+    assert np.shape(center) == (2, ), "center must be a vector of length 2"
+    assert np.shape(bbox) == (5, ) or np.shape(bbox) == (4, ), "bbox must be a vector of length 4 or 5"
+    scaled = False
+    bbox = np.asarray(bbox.copy(), dtype = np.float32)
+    if np.max(center) <= 1:
+       bbox = bbox * [1000, 1000, 1000, 1000, 1]
+       center = tuple(np.asarray(center) * [1000, 1000])
+       scaled = True
     
-    bbox = rotate_oriented_bbox((0.5, 0.5), orbbox);
-    bbox = bbox * 300
-    xmin, ymin, xmax, ymax = bbox
-    util.img.circle(mask, (150, 150), 3, color = util.img.COLOR_WHITE)
-    util.img.circle(mask, ((xmin + xmax) / 2, (ymin + ymax) / 2), 3, color = util.img.COLOR_GREEN)
-    util.img.rectangle(mask, (xmin, ymin), (xmax, ymax), color = util.img.COLOR_GREEN)
-    util.sit(mask)
+    cx, cy, w, h, theta = bbox[...];
+    M = cv2.getRotationMatrix2D(center, -theta, scale = 1) # 2x3
+    cx, cy = np.dot(M, np.transpose([cx, cy, 1]))
+    if scaled: 
+        cx = cx / 1000.0;
+        cy = cy / 1000.0;
+    bbox[0:2] = [cx, cy]
+    return bbox
     
-if __name__ == '__main__':
-    _test_rotate_oriented_bbox()
+    
+def match_anchor_to_text_boxes(anchors, xs, ys, max_height_ratio = 1.5):
+    """Match anchors to text boxes. 
+       The match result is stored in a vector, whose value is the index of matched box if >=0, and returned.
+    """
+    
+    assert len(np.shape(anchors)) == 2 and np.shape(anchors)[1] == 4, "the anchors must be a tensor with shape = (num_anchors, 4)"
+    assert len(np.shape(xs)) == 2 and np.shape(xs) = np.shape(ys) and np.shape(ys)[1] == 4, "the xs, ys must be a tensor with shape = (num_bboxes, 4)"
+    anchors = np.asarray(anchors, dtype = np.float32)
+    xs = np.asarray(xs, dtype = np.float32)
+    ys = np.asarray(ys, dtype = np.float32)
+    
+    num_anchors = anchors.shape[0]
+    labels = np.ones((num_anchors, ), dtype = np.int32) * -1;
+    seg_gt = np.zeros((num_anchors, 5), dtype = np.float32)
+    num_bboxes = xs.shape[0]
+    
+    #represent bboxes with min area rects
+    rects = min_area_rect(xs, ys) # shape = (num_bboxes, 5)
+    rects = transform_cv_rect(rects)
+    assert rects.shape == (num_bboxes, 5)
+    
+    #represent bboxes with contours
+    cnts = []
+    for bbox_idx in xrange(num_bboxes):
+        bbox_points = zip(xs[bbox_idx, :], ys[bbox_idx, :])
+        cnt = util.img.points_to_contour(bbox_points);
+        cnts.append(cnt)
+    # match
+    for anchor_idx in xrange(num_anchors):
+        anchor = anchors[anchor_idx, :]
+        acx, acy, aw, ah = anchor
+        
+        center_point_matched = False
+        height_matched = False
+        for bbox_idx in xrange(num_bboxes):
+            # center point check
+            center_point_matched = cv2.pointPolygonTest((acx, acy), cnts[bbox_idx])
+            if not center_point_matched:
+                continue
+                
+            # height ratio check
+            rect = rects[bbox_idx, :]
+            cx, cy, w, h = rect[0:4]
+            height = min(w, h);
+            ratio = aw / height # aw == ah
+            height_matched = max(ratio, 1/ratio) <= max_height_ratio
+            
+            if height_matched and center_point_matched:
+                # an anchor can only be matched to at most one bbox
+                labels[anchor_idx] = bbox_idx
+                seg_gt[anchor_idx, :] = cal_seg_gt(anchor, rect)
+                
+    return labels, seg_gt
+
+
+def cal_seg_gt(anchor, rect):
+    # rotate text box along the center of anchor to horizontal direction
+    center = (anchor[0], anchor[1])
+    rect = rotate_oriented_bbox_to_horizontal(center, rect)
+
+    # crop horizontal text box to anchor    
+    rect = crop_horizontal_bbox_using_anchor(rect, anchor)
+    
+    # rotate the box to original direction
+    rect = rotate_horizontal_bbox_to_oriented(center, rect)
+    return rect
