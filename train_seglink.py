@@ -120,6 +120,7 @@ def main(_):
             shapes = fake_net.get_shapes();
             
             anchors = anchor_layer.generate_anchors(image_shape = (FLAGS.train_image_size, FLAGS.train_image_size), feat_layers = feat_layers, feat_shapes = shapes)
+            
             with tf.Session() as sess:
                 tf.train.start_queue_runners(sess)
                 i = 0

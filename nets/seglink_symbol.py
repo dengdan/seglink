@@ -13,7 +13,7 @@ class SegLinkNet(object):
         shapes = {}
             
         for layer in self.end_points:
-            shapes[layer] = tensor_shape(self.end_points[layer])
+            shapes[layer] = tensor_shape(self.end_points[layer])[1:-1]
             
         return shapes
     def get_shape(self, name):

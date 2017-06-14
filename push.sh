@@ -1,4 +1,4 @@
 git add . --all
-git commit -m "anchor match and seg_gt calculation, to be tested"
+git commit -m "finish seglink gt calculation with numpy"
 git push -u origin master
 
