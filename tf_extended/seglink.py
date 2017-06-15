@@ -314,4 +314,159 @@ def get_all_seglink_gt(anchors, xs, ys, feat_layers, feat_shapes):
     link_gt = cal_link_gt(labels, feat_layers, feat_shapes);
     return labels, seg_gt, link_gt
     
+
+############################################################################################################
+#                       linking segments together                                                          #
+############################################################################################################
+def group_segs(seg_scores, link_scores, feat_layers, feat_shapes, seg_confidence_threshold, link_confidence_threshold):
+    """
+    group segments based on their scores and links.
+    Return: segment groups as a list, consisting of list of segment indexes, reprensting a group of segments belonging to a same bbox.
+    """
+    assert len(np.shape(seg_scores)) == 1
+    assert len(np.shape(link_scores)) == 1
     
+    valid_segs = np.where(seg_scores >= seg_confidence_threshold);
+    mask = {}
+    for s in valid_segs:
+        mask[s] = -1;
+    
+    def get_root(idx):
+        parent = mask[idx]
+        while parent != -1:
+            idx = parent
+            parent = mask[parent]
+        return idx
+            
+    def union(idx1, idx2):
+        root1 = get_root(idx1)
+        root2 = get_root(idx2)
+        
+        if root1 != root2:
+            mask[root1] = root2
+            
+    def to_list():
+        result = {}
+        for idx in mask:
+            root = get_root(idx)
+            if root not in result:
+                result[root] = []
+            
+            result[root].append(idx)
+            
+        return [result[root] for root in result]
+        
+    seg_indexes = np.arange(len(seg_scores))
+    layer_seg_indexes = reshape_labels_by_layer(seg_indexes, feat_layers, feat_shapes)
+
+    layer_inter_link_scores, layer_cross_link_scores = reshape_link_gt_by_layer(link_scores, feat_layers, feat_shapes)
+    
+    for layer_index, layer_name in enumerate(feat_layers):
+        feat_shape = feat_shapes[layer_name]
+        layer_seg_index = layer_seg_indexes[layer_name]
+        layer_inter_link_score = layer_inter_link_scores[layer_name]
+        lh, lw = feat_shape;
+        if layer_index > 0:
+            previous_layer_name = feat_layers[layer_index - 1]
+            previous_layer_seg_index = layer_seg_indexes[previous_layer_name]
+            previous_layer_shape = feat_shapes[previous_layer_name]
+            plh, plw = previous_layer_shape
+            layer_cross_link_score = layer_cross_link_scores[layer_name]
+            
+            
+        for y in xrange(lh):
+            for x in xrange(lw):
+                seg_index = layer_seg_index[y, x]
+                
+                _seg_score = seg_scores[seg_index]
+                if _seg_score >= seg_confidence_threshold:
+
+                    # find inter layer linked neighbours                    
+                    _links = layer_seg_index[y, x, :]
+                    
+                    inter_layer_neighbours = get_inter_layer_neighbours(x, y)
+                    for nidx, nxy in enumerate(inter_layer_neigbours):
+                        nx, ny = nxy
+                        if is_valid_cord(nx, ny, lw, lh) and layer_inter_link_score[y, x, nidx] >= link_confidence_threshold:
+                            n_seg_index = layer_seg_index[ny, nx]
+                            union(seg_index, n_seg_index)
+                    
+                    # find cross layer linked neighbours
+                    if layer_index > 0:
+                        cross_layer_neighbours = get_cross_layer_neighbours(x, y)
+                        for nidx, nxy in enumerate(cross_layer_neighbours):
+                            nx, ny = nxy
+                            if is_valid_cord(nx, ny, plw, plh) and layer_cross_link_score[y, x, nidx] >= link_confidence_threshold:
+                                n_seg_index = previous_layer_seg_index[ny, nx]
+                                union(seg_index, n_seg_index)
+                                
+    return to_list()
+        
+        
+    
+############################################################################################################
+#                       combining segments to bboxes                                                       #
+############################################################################################################
+def seglink_to_bbox(seg_scores, link_scores, segs, feat_layers, feat_shapes, seg_confidence_threshold, link_confidence_threshold):
+    seg_groups = group_segs(seg_scores, link_scores, feat_layers, feat_shapes, seg_confidence_threshold, link_confidence_threshold);
+    bboxes = []
+    for group in seg_groups:
+        bbox = combine_segs(group)
+        bboxes.append(bbox)
+    return bboxes
+    
+def combine_segs(segs):
+    segs = np.asarray(segs)
+    
+    # find the best straight line fitting all center points: y = kx + b
+    cxs = segs[:, 0]
+    cys = segs[:, 1]
+
+    ## the slope
+    bar_theta = np.mean(segs[:, 4])# average theta
+    k = np.tanh(bar_theta);
+    
+    ## the bias: minimize sum (kx_i + b - y_i)^2, note that kx_i means k*x_i
+    ### let c_i = kx_i - y_i
+    ### sum (kx_i + bias - y_i)^2 = sum(c_i + b)^2
+    ###                           = sum(c_i^2 + b^2 + 2 * c_i * b)
+    ###                           = n * b^2 + 2* sum(c_i) * b + sum(c_i^2)
+    ### the target b = - sum(c_i) / n = - mean(c_i) = mean(y_i - k * x_i)
+    b = np.mean(cys - k * cxs)
+    
+    # find the projection of all centers onto the string line
+    ## first move both the line and centers upward by distance b, so as to make the straight line cross the point(0, 0): y = kx
+    ## reprensent the line as a vector (1, k), and the projections vector(x, y) on (1, k) is proj = (x + ky)  / sqrt(1 + k^2)
+    ## the projection point of (x, y) on (1, k) is (proj * cos(theta), proj * sin(theta))
+    ## move the point back by b
+    t_cys = cys - b
+    projs = (cxs + k * t_cys) / np.sqrt(1 + k^2)
+    proj_points = np.asarray([projs * np.cosin(bar_theta), projs * np.sin(bar_theta)])
+    
+    # find the most two distant points
+    max_dist = 0;
+    idx1 = -1, idx2 = -1;
+    for i in xrange(len(proj_points)):
+        point1 = proj_points[i, :]
+        assert len(point1) == 2
+        for j in xrange(len(proj_points)):
+            point2 = proj_point[j, :]
+            dist = np.sqrt(np.sum((point1 - point2) ** 2))
+            if dist > max_dist:
+                idx1 = i
+                idx2 = j
+                
+    # the bbox: bcx, bcy, bw, bh, average_theta
+    seg1 = segs[idx1, :]
+    seg2 = segs[idx2, :]
+    bcx, bcy = (seg1[:2] + seg2[:2]) / 2.0
+    bh = np.mean(segs[:, 3])
+    bw = max_dist + (seg1[2] + seg2[2]) / 2.0
+    return bcx, bcy, bw, bh, average_theta
+            
+    
+    
+    
+    
+    
+
