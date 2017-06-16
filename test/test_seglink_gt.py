@@ -193,7 +193,7 @@ def _test_cal_seglink_gt():
                 # check the image, tell if it is right: No. green anchors == num_linkage
                 util.sit(img)
         
-def _test_cal_seglink_gt2():
+def _test_combine_seglinks():
     points = [[200, 200, 300, 200, 300, 500, 200, 500]] # perpendicular
     points = [[200, 200, 500, 200, 500, 300, 200, 300]] # perpendicular
     points = [[307,144,409,140,406,166,304,169]]# right inclined, nearly perpendicular
@@ -216,50 +216,46 @@ def _test_cal_seglink_gt2():
     feat_shapes = fake_net.get_shapes();
     anchors, layer_anchors = anchor_layer.generate_anchors(image_shape = (image_size, image_size), feat_layers = feat_layers, feat_shapes = feat_shapes)
     labels, seg_gt, link_gt = get_all_seglink_gt(anchors, xs, ys, feat_layers, feat_shapes)
-    inter_layer_link_gt, cross_layer_link_gt = reshape_link_gt_by_layer(link_gt, feat_layers, feat_shapes)
-    
-    # test from here
+
+    seg_scores = labels >= 0
+    seg_groups = group_segs(seg_scores = seg_scores, link_scores = link_gt, feat_layers = feat_layers, feat_shapes = feat_shapes, seg_confidence_threshold = 0.5, link_confidence_threshold = 0.5)
+        
+    # test grouping
     image = util.img.black((image_size, image_size, 3))
     min_area_rects = min_area_rect(xs, ys)
-    
-    layer_labels = reshape_labels_by_layer(labels, feat_layers, feat_shapes)
+    for rect in min_area_rects:        
+        draw_oriented_rect(image, rect, color=util.img.COLOR_WHITE)
 
-    for bbox_idx in xrange(len(points)):
-        rect = min_area_rects[bbox_idx, ...]
-        rect_height = min(rect[2], rect[3])
-        
-        for layer_name in feat_layers:
-            img = image.copy()
-            draw_oriented_rect(img, rect, color=util.img.COLOR_WHITE)
-            layer_anchor = layer_anchors[layer_name]
-                    
-            anchor_height = layer_anchor[0, 0, 3]
-            height_ratio = anchor_rect_height_ratio(layer_anchor[0, 0, :], rect)
-            if height_ratio > config.MATCHING_max_height_ratio:
-                continue
-            util.img.put_text(img, text = 'rect_height = %f, anchor_height = %f, ratio = %f'%(rect_height, anchor_height, height_ratio), pos = (100, 100))
+    #util.sit(img)
+    
+    def draw_line(I, theta, b, color):
+        k = tan(theta)
+        def fn(x):
+            return int(k * x + b)
+        h, w = I.shape[:-1]
+        print 'theta = %f, y = %f * x + %f'%(theta, k, b)
+        for x in xrange(w):
+            yf = fn(x)
             
-            layer_label = layer_labels[layer_name]
-            layer_inter_link = inter_layer_link_gt[layer_name]
-            layer_cross_link = cross_layer_link_gt[layer_name] if layer_name in cross_layer_link_gt else None
-            layer_shape = feat_shapes[layer_name]
-            lh, lw = layer_shape
-            for x in xrange(lw):
-                for y in xrange(lh):
-                    anchor = layer_anchor[y, x, :]
-                    anchor_label = layer_label[y, x]
-                    draw_horizontal_rect(img, anchor, color = util.img.COLOR_RGB_GRAY, center_only = True)
-                    if anchor_label != bbox_idx:
-                        continue
-                        
-                    draw_horizontal_rect(img, anchor, color = util.img.COLOR_RGB_YELLOW)
-            util.sit(img, path = '~/temp/no-use/seg_gt/%d_%s.jpg'%(bbox_idx, layer_name))    
-            #import pdb
-            #pdb.set_trace()
-            print "check if the saved image is right or not: if the ratio is less than %f and there are gray dots in the rect, there should be yellow anchors"%(config.MATCHING_max_height_ratio)
-                                             
+            if is_valid_cord(x, yf, w,h):
+                I[yf, x, :] = color
+    
+    # test combining
+    bboxes = seglink_to_bbox(seg_scores, link_scores = link_gt, segs = seg_gt, feat_layers = feat_layers, feat_shapes = feat_shapes, seg_confidence_threshold = 0.5, link_confidence_threshold = 0.5)
+    
+    img = image.copy()
+    for group, bbox in zip(seg_groups, bboxes):
+        for seg_idx in group:
+            seg = seg_gt[seg_idx, :]
+            #draw_oriented_rect(img, seg, color = util.img.COLOR_RGB_YELLOW)
+        draw_oriented_rect(img, bbox, color = util.img.COLOR_GREEN)
+        #draw_line(img, bbox[-2], bbox[-1], color = util.img.COLOR_RGB_RED)
+    util.sit(img)
+    print "check the output image, make sure that all white bboxes are overridden by green ones."
+            
 if __name__ == '__main__':
     #_test_min_area_rect()
 #    _test_cal_seg_gt()
     #_test_matching_and_seg_gt_cal()
-    _test_cal_seglink_gt()
+    _test_combine_seglinks()
+
