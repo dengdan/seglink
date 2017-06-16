@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+import tensorflow as tf
 
 import config
 import util
@@ -62,7 +63,7 @@ def transform_cv_rect(rects):
     num_rects = np.shape(rects)[0]
     for idx in xrange(num_rects):
         cx, cy, w, h, theta = rects[idx, ...];
-        assert theta < 0 and theta >= -90, "invalid theta: %f"%(theta) 
+        #assert theta < 0 and theta >= -90, "invalid theta: %f"%(theta) 
         if abs(theta) > 45 or (abs(theta) == 45 and w < h):
             w, h = [h, w]
             theta = 90 + theta
@@ -188,7 +189,7 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
             cx, cy, w, h = rect[0:4]
             height = min(w, h);
             ratio = aw / height # aw == ah
-            height_matched = max(ratio, 1/ratio) <= config.MATCHING_max_height_ratio
+            height_matched = max(ratio, 1/ratio) <= config.max_height_ratio
             
             if height_matched and center_point_matched:
                 # an anchor can only be matched to at most one bbox
@@ -203,13 +204,13 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
 #                       link_gt calculation                                                                #
 ############################################################################################################
 
-def reshape_link_gt_by_layer(link_gt, feat_layers, feat_shapes):
+def reshape_link_gt_by_layer(link_gt):
     inter_layer_link_gts = {}
     cross_layer_link_gts = {}
     
     idx = 0;
-    for layer_idx, layer_name in enumerate(feat_layers):
-        layer_shape = feat_shapes[layer_name]
+    for layer_idx, layer_name in enumerate(config.feat_layers):
+        layer_shape = config.feat_shapes[layer_name]
         lh, lw = layer_shape
         
         length = lh * lw * 8;
@@ -218,9 +219,9 @@ def reshape_link_gt_by_layer(link_gt, feat_layers, feat_shapes):
         layer_link_gt = np.reshape(layer_link_gt, (lh, lw, 8))
         inter_layer_link_gts[layer_name] = layer_link_gt
         
-    for layer_idx in xrange(1, len(feat_layers)):
-        layer_name = feat_layers[layer_idx]
-        layer_shape = feat_shapes[layer_name]
+    for layer_idx in xrange(1, len(config.feat_layers)):
+        layer_name = config.feat_layers[layer_idx]
+        layer_shape = config.feat_shapes[layer_name]
         lh, lw = layer_shape
         length = lh * lw * 4;
         layer_link_gt = link_gt[idx: idx + length]
@@ -231,11 +232,11 @@ def reshape_link_gt_by_layer(link_gt, feat_layers, feat_shapes):
     assert idx == len(link_gt)
     return inter_layer_link_gts, cross_layer_link_gts
         
-def reshape_labels_by_layer(labels, feat_layers, feat_shapes):
+def reshape_labels_by_layer(labels):
     layer_labels = {}
     idx = 0;
-    for layer_name in feat_layers:
-        layer_shape = feat_shapes[layer_name]
+    for layer_name in config.feat_layers:
+        layer_shape = config.feat_shapes[layer_name]
         label_length = np.prod(layer_shape)
         
         layer_match_result = labels[idx: idx + label_length]
@@ -258,13 +259,13 @@ def get_cross_layer_neighbours(x, y):
 def is_valid_cord(x, y, w, h):
     return x >=0 and x < w and y >= 0 and y < h;
 
-def cal_link_gt(labels, feat_layers, feat_shapes):
-    layer_labels = reshape_labels_by_layer(labels, feat_layers, feat_shapes)
+def cal_link_gt(labels):
+    layer_labels = reshape_labels_by_layer(labels)
     inter_layer_link_gts = []
     cross_layer_link_gts = []
-    for layer_idx, layer_name in enumerate(feat_layers):
+    for layer_idx, layer_name in enumerate(config.feat_layers):
         layer_match_result = layer_labels[layer_name]
-        h, w = feat_shapes[layer_name]
+        h, w = config.feat_shapes[layer_name]
         
         inter_layer_link_gt = np.zeros((h, w, 8), dtype = np.int32)
         
@@ -287,8 +288,8 @@ def cal_link_gt(labels, feat_layers, feat_shapes):
                                 
                     # cross layer
                     if layer_idx > 0:
-                        previous_layer_name = feat_layers[layer_idx - 1];
-                        ph, pw = feat_shapes[previous_layer_name]
+                        previous_layer_name = config.feat_layers[layer_idx - 1];
+                        ph, pw = config.feat_shapes[previous_layer_name]
                         previous_layer_match_result = layer_labels[previous_layer_name]
                         neighbours = get_cross_layer_neighbours(x, y)
                         for nidx, nxy in enumerate(neighbours):
@@ -309,20 +310,39 @@ def cal_link_gt(labels, feat_layers, feat_shapes):
     return link_gt
 
 
-def get_all_seglink_gt(anchors, xs, ys, feat_layers, feat_shapes):
+def get_all_seglink_gt(xs, ys, normalize = False):
+    anchors = config.default_anchors
     labels, seg_gt = match_anchor_to_text_boxes(anchors, xs, ys);
-    link_gt = cal_link_gt(labels, feat_layers, feat_shapes);
+    link_gt = cal_link_gt(labels);
+    if normalize:    
+        # normalize the segment ground truth between 1 and 0.
+        h_I, w_I = config.image_shape
+        seg_gt = np.asarray(seg_gt, dtype = np.float32) / [w_I, h_I, w_I, h_I, 1.0]
+    
+    labels = np.asarray(labels >=0, dtype = np.int32);
+    seg_gt = np.asarray(seg_gt, dtype = np.float32)
+    link_gt = np.asarray(link_gt, dtype = np.int32)
     return labels, seg_gt, link_gt
     
+
+def tf_get_all_seglink_gt(xs, ys):
+    labels, seg_gt, link_gt = tf.py_func(get_all_seglink_gt, [xs, ys, True], [tf.int32, tf.float32, tf.int32]);
+    labels.set_shape([config.num_anchors])
+    seg_gt.set_shape([config.num_anchors, 5])
+    link_gt.set_shape([config.num_links])
+    return labels, seg_gt, link_gt;
 
 ############################################################################################################
 #                       linking segments together                                                          #
 ############################################################################################################
-def group_segs(seg_scores, link_scores, feat_layers, feat_shapes, seg_confidence_threshold, link_confidence_threshold):
+def group_segs(seg_scores, link_scores):
     """
     group segments based on their scores and links.
     Return: segment groups as a list, consisting of list of segment indexes, reprensting a group of segments belonging to a same bbox.
     """
+    seg_confidence_threshold = config.seg_confidence_threshold
+    link_confidence_threshold = config.link_confidence_threshold
+    
     assert len(np.shape(seg_scores)) == 1
     assert len(np.shape(link_scores)) == 1
     
@@ -359,19 +379,19 @@ def group_segs(seg_scores, link_scores, feat_layers, feat_shapes, seg_confidence
 
         
     seg_indexes = np.arange(len(seg_scores))
-    layer_seg_indexes = reshape_labels_by_layer(seg_indexes, feat_layers, feat_shapes)
+    layer_seg_indexes = reshape_labels_by_layer(seg_indexes)
 
-    layer_inter_link_scores, layer_cross_link_scores = reshape_link_gt_by_layer(link_scores, feat_layers, feat_shapes)
+    layer_inter_link_scores, layer_cross_link_scores = reshape_link_gt_by_layer(link_scores)
     
-    for layer_index, layer_name in enumerate(feat_layers):
-        layer_shape = feat_shapes[layer_name]
+    for layer_index, layer_name in enumerate(config.feat_layers):
+        layer_shape = config.feat_shapes[layer_name]
         lh, lw = layer_shape
         layer_seg_index = layer_seg_indexes[layer_name]
         layer_inter_link_score = layer_inter_link_scores[layer_name]
         if layer_index > 0:
-            previous_layer_name = feat_layers[layer_index - 1]
+            previous_layer_name = config.feat_layers[layer_index - 1]
             previous_layer_seg_index = layer_seg_indexes[previous_layer_name]
-            previous_layer_shape = feat_shapes[previous_layer_name]
+            previous_layer_shape = config.feat_shapes[previous_layer_name]
             plh, plw = previous_layer_shape
             layer_cross_link_score = layer_cross_link_scores[layer_name]
             
@@ -415,8 +435,8 @@ def group_segs(seg_scores, link_scores, feat_layers, feat_shapes, seg_confidence
 ############################################################################################################
 #                       combining segments to bboxes                                                       #
 ############################################################################################################
-def seglink_to_bbox(seg_scores, link_scores, segs, feat_layers, feat_shapes, seg_confidence_threshold, link_confidence_threshold):
-    seg_groups = group_segs(seg_scores, link_scores, feat_layers, feat_shapes, seg_confidence_threshold, link_confidence_threshold);
+def seglink_to_bbox(seg_scores, link_scores, segs):
+    seg_groups = group_segs(seg_scores, link_scores);
     bboxes = []
     for group in seg_groups:
         group = [segs[idx, :] for idx in group]
@@ -438,8 +458,7 @@ def combine_segs(segs):
     # find the best straight line fitting all center points: y = kx + b
     cxs = segs[:, 0]
     cys = segs[:, 1]
-    #import pdb
-    #pdb.set_trace()
+
     ## the slope
     bar_theta = np.mean(segs[:, 4])# average theta
     k = tan(bar_theta);

@@ -18,12 +18,12 @@ import tensorflow as tf
 
 from datasets import dataset_factory
 from preprocessing import ssd_vgg_preprocessing
-from tf_extended import bboxes as tfe_bboxes
+from tf_extended import seglink
 import util
 from nets import seglink_symbol
 from nets import anchor_layer
 slim = tf.contrib.slim
-
+import config
 DATA_FORMAT = 'NHWC'
 
 # =========================================================================== #
@@ -66,7 +66,18 @@ def main(_):
     if not FLAGS.dataset_dir:
         raise ValueError('You must supply the dataset directory with --dataset_dir')
     tf.logging.set_verbosity(tf.logging.DEBUG)
-    batch_size = FLAGS.batch_size;
+
+    # use all available gpus
+    gpus = util.tf.get_available_gpus();
+    num_clones = len(gpus);
+    if num_clones > 1 and FLAGS.batch_size % num_clones != 0:
+        raise ValueError('If multi gpus are used, the batch_size should be a multiple of the number of gpus.')
+    batch_size = FLAGS.batch_size / num_clones;
+    print "%d images per GPU"%(batch_size)
+
+    image_shape = (FLAGS.train_image_size, FLAGS.train_image_size)
+    config.init_config(image_shape)
+    
     with tf.Graph().as_default():
         # Select the dataset.
         dataset = dataset_factory.get_dataset(
@@ -103,64 +114,39 @@ def main(_):
             gys = tf.transpose(tf.stack([y1, y2, y3, y4]))
             image = tf.identity(image, 'input_image')
             # Pre-processing image, labels and bboxes.
-            image_shape = (FLAGS.train_image_size, FLAGS.train_image_size)
+
             image, glabels, gbboxes, gxs, gys = \
                             ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
                                                                out_shape=image_shape,
                                                                data_format=DATA_FORMAT,
                                                                is_training = True)
-            gorbboxes = tfe_bboxes.tf_min_area_rect(gxs, gys)
             image = tf.identity(image, 'processed_image')
             
-            feat_layers = ['conv4_3','fc7', 'conv6_2', 'conv7_2', 'conv8_2', 'conv9_2', 'conv10_2']
             
-            # shape reference                
-            fake_image = tf.ones((batch_size, FLAGS.train_image_size, FLAGS.train_image_size, 3))
-            fake_net = seglink_symbol.SegLinkNet(inputs = fake_image, feat_layers = feat_layers)
-            shapes = fake_net.get_shapes();
+            # calculate ground truth
+            seg_labels, seg_gt, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
             
-            anchors = anchor_layer.generate_anchors(image_shape = (FLAGS.train_image_size, FLAGS.train_image_size), feat_layers = feat_layers, feat_shapes = shapes)
-            
+            # batch them
+            b_image, b_seg_labels, b_seg_gt, b_link_gt = tf.train.batch(
+                [image, seg_labels, seg_gt, link_gt],
+                batch_size = batch_size,
+                num_threads=FLAGS.num_preprocessing_threads,
+                capacity = 50 * batch_size)
+                
+            batch_queue = slim.prefetch_queue.prefetch_queue(
+                [b_image, b_seg_labels, b_seg_gt, b_link_gt],
+                capacity = 2 * num_clones) 
+
             with tf.Session() as sess:
                 tf.train.start_queue_runners(sess)
-                i = 0
-                while i < 20:
-                    i += 1
-                    image_data, label_data, bbox_data, xs_data, ys_data, orbboxes = \
-                                                         sess.run([image, glabels, gbboxes, gxs, gys, gorbboxes])
-                    image_data = image_data + [123., 117., 104.]
-                    image_data = np.asarray(image_data, np.uint8)
-                    h, w = image_data.shape[0:-1]
-                    bbox_data = bbox_data * [h, w, h, w]
-                    xs_data = xs_data * w
-                    ys_data = ys_data * h
-                    orbboxes = orbboxes * [w, h, w, h, 1]
-                    I = image_data.copy()
-                    
-                    for idx in range(bbox_data.shape[0]):
-                        if label_data[idx] > 0:
-                            color = util.img.COLOR_GREEN
-                        else:
-                            color = util.img.COLOR_WHITE
-                        
-                        def draw_bbox():
-                            y1, x1, y2, x2 = bbox_data[idx, :]
-                            util.img.rectangle(I, (x1, y1), (x2, y2), color = color)
-                        
-                        def draw_xys():
-                            points = zip(xs_data[idx, :], ys_data[idx, :])
-                            cnts = util.img.points_to_contours(points);
-                            util.img.draw_contours(I, cnts, -1, color = color)
-                        
-                        def draw_orbbox():
-                            orbox = orbboxes[idx, :]
-                            import cv2
-                            rect = ((orbox[0], orbox[1]), (orbox[2], orbox[3]), orbox[4])
-                            box = cv2.cv.BoxPoints(rect)
-                            box = np.int0(box)
-                            cv2.drawContours(I, [box], 0, color, 1)
-
-                        draw_orbbox();
-                    util.sit(I)
+                b_image, b_seg_labels, b_seg_gt, b_link_gt = batch_queue.dequeue()
+                while True:
+                    import pdb
+                    pdb.set_trace()
+                    image_data, label_data, seg_data, link_data = sess.run([b_image, b_seg_labels, b_seg_gt, b_link_gt])                
+                
+                
+                
+                
 if __name__ == '__main__':
     tf.app.run()

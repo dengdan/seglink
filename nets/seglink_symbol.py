@@ -1,11 +1,12 @@
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 import net_factory
+import config
 
 class SegLinkNet(object):
-    def __init__(self, inputs, feat_layers, basenet_type = 'vgg'):
+    def __init__(self, inputs, basenet_type = 'vgg'):
         self.inputs = inputs;
-        self.feat_layers = feat_layers
+        self.feat_layers = config.feat_layers
         self.basenet_type = basenet_type;
         self._build_network();
         self.shapes = self.get_shapes();

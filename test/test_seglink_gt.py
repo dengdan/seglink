@@ -208,7 +208,6 @@ def _test_combine_seglinks():
                 [218,213,241,208,245,223,222,227], \
                 [244,207,266,203,271,219,250,222]]
     xs, ys = points_to_xys(points)
-    
     image_size = 2048
     fake_image = tf.ones((2, image_size, image_size, 3))
     feat_layers = ['conv4_3','fc7', 'conv6_2', 'conv7_2', 'conv8_2', 'conv9_2', 'conv10_2']
@@ -217,7 +216,7 @@ def _test_combine_seglinks():
     anchors, layer_anchors = anchor_layer.generate_anchors(image_shape = (image_size, image_size), feat_layers = feat_layers, feat_shapes = feat_shapes)
     labels, seg_gt, link_gt = get_all_seglink_gt(anchors, xs, ys, feat_layers, feat_shapes)
 
-    seg_scores = labels >= 0
+    seg_scores = labels
     seg_groups = group_segs(seg_scores = seg_scores, link_scores = link_gt, feat_layers = feat_layers, feat_shapes = feat_shapes, seg_confidence_threshold = 0.5, link_confidence_threshold = 0.5)
         
     # test grouping

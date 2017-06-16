@@ -1,15 +1,14 @@
 import numpy as np
-
-def generate_anchors(image_shape, feat_layers, feat_shapes):
+import config 
+def generate_anchors():
     """
     
     """
     all_anchors = []
     layer_anchors = {}
-    h_I, w_I = image_shape[0: 2];
-    
-    for layer_name in feat_layers:
-        feat_shape = feat_shapes[layer_name];
+    h_I, w_I = config.image_shape;
+    for layer_name in config.feat_layers:
+        feat_shape = config.feat_shapes[layer_name];
         h_l, w_l = feat_shape
         anchors = _generate_anchors_one_layer(h_I, w_I, h_l, w_l)
         all_anchors.append(anchors)
@@ -22,26 +21,27 @@ def _reshape_and_concat(tensors):
     tensors = [np.reshape(t, (-1, t.shape[-1])) for t in tensors]
     return np.vstack(tensors)
         
-def _generate_anchors_one_layer(h_I, w_I, h_l, w_l, offset = 0.5, gamma = 1.5):
+def _generate_anchors_one_layer(h_I, w_I, h_l, w_l):
     """
     generate anchors on on layer
     return a ndarray with shape (h_l, w_l, 4), and the last dimmension in the order:[cx, cy, w, h]
     """
     y, x = np.mgrid[0: h_l, 0:w_l]
-    cy = (y + offset) / h_l * h_I
-    cx = (x + offset) / w_l * w_I
+    cy = (y + config.anchor_offset) / h_l * h_I
+    cx = (x + config.anchor_offset) / w_l * w_I
     
-    anchor_scale = _get_scale(w_I, w_l, gamma = gamma)
+    anchor_scale = _get_scale(w_I, w_l)
     anchor_w = np.ones_like(cx) * anchor_scale
     anchor_h = np.ones_like(cx) * anchor_scale # cx.shape == cy.shape
     
     anchors = np.asarray([cx, cy, anchor_w, anchor_h])
     anchors = np.transpose(anchors, (1, 2, 0))
+    
     return anchors
     
     
-def _get_scale(w_I, w_l, gamma):
-    return gamma * 1.0 * w_I / w_l
+def _get_scale(w_I, w_l):
+    return config.anchor_scale_gamma * 1.0 * w_I / w_l
     
     
 
