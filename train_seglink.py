@@ -67,14 +67,7 @@ def main(_):
         raise ValueError('You must supply the dataset directory with --dataset_dir')
     tf.logging.set_verbosity(tf.logging.DEBUG)
 
-    # use all available gpus
-    gpus = util.tf.get_available_gpus();
-    num_clones = len(gpus);
-    if num_clones > 1 and FLAGS.batch_size % num_clones != 0:
-        raise ValueError('If multi gpus are used, the batch_size should be a multiple of the number of gpus.')
-    batch_size = FLAGS.batch_size / num_clones;
-    print "%d images per GPU"%(batch_size)
-
+    batch_size = FLAGS.batch_size
     image_shape = (FLAGS.train_image_size, FLAGS.train_image_size)
     config.init_config(image_shape)
     
@@ -135,7 +128,7 @@ def main(_):
                 
             batch_queue = slim.prefetch_queue.prefetch_queue(
                 [b_image, b_seg_labels, b_seg_gt, b_link_gt],
-                capacity = 2 * num_clones) 
+                capacity = 2) 
 
             with tf.Session() as sess:
                 tf.train.start_queue_runners(sess)

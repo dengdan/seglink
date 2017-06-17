@@ -326,6 +326,10 @@ def get_all_seglink_gt(xs, ys, normalize = False):
     
 
 def tf_get_all_seglink_gt(xs, ys):
+    h_I, w_I = config.image_shape
+    
+    xs = xs * w_I
+    ys = ys * h_I    
     labels, seg_gt, link_gt = tf.py_func(get_all_seglink_gt, [xs, ys, True], [tf.int32, tf.float32, tf.int32]);
     labels.set_shape([config.num_anchors])
     seg_gt.set_shape([config.num_anchors, 5])
