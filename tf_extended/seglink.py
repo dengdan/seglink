@@ -310,7 +310,7 @@ def cal_link_gt(labels):
     return link_gt
 
 
-def get_all_seglink_gt(xs, ys, normalize = False):
+def get_all_seglink_gt(xs, ys, normalize = False, bbox_idx_in_label = False):
     anchors = config.default_anchors
     labels, seg_gt = match_anchor_to_text_boxes(anchors, xs, ys);
     link_gt = cal_link_gt(labels);
@@ -319,7 +319,11 @@ def get_all_seglink_gt(xs, ys, normalize = False):
         h_I, w_I = config.image_shape
         seg_gt = np.asarray(seg_gt, dtype = np.float32) / [w_I, h_I, w_I, h_I, 1.0]
     
-    labels = np.asarray(labels >=0, dtype = np.int32);
+    if not bbox_idx_in_label:
+        labels = np.asarray(labels >=0, dtype = np.int32);
+    else:
+        labels = np.asarray(labels, dtype = np.int32);
+        
     seg_gt = np.asarray(seg_gt, dtype = np.float32)
     link_gt = np.asarray(link_gt, dtype = np.int32)
     return labels, seg_gt, link_gt
@@ -439,12 +443,12 @@ def group_segs(seg_scores, link_scores):
 ############################################################################################################
 #                       combining segments to bboxes                                                       #
 ############################################################################################################
-def seglink_to_bbox(seg_scores, link_scores, segs):
+def seglink_to_bbox(seg_scores, link_scores, segs, return_bias = False):
     seg_groups = group_segs(seg_scores, link_scores);
     bboxes = []
     for group in seg_groups:
         group = [segs[idx, :] for idx in group]
-        bbox = combine_segs(group)
+        bbox = combine_segs(group, return_bias = return_bias)
         bboxes.append(bbox)
     return np.asarray(bboxes)
 
@@ -455,10 +459,14 @@ def cos(theta):
 def tan(theta):
     return np.tan(theta / 180.0 * np.pi)
     
-def combine_segs(segs):
+def combine_segs(segs, return_bias = False):
     segs = np.asarray(segs)
     assert segs.ndim == 2
     assert segs.shape[-1] == 5    
+    
+    if len(segs) == 1:
+        return segs[0, :]
+    
     # find the best straight line fitting all center points: y = kx + b
     cxs = segs[:, 0]
     cys = segs[:, 1]
@@ -484,7 +492,7 @@ def combine_segs(segs):
     proj_points = np.transpose([projs * cos(bar_theta), projs * sin(bar_theta)])
     
     # find the max distance
-    max_dist = 0;
+    max_dist = -1;
     idx1 = -1;
     idx2 = -1;
 
@@ -504,5 +512,9 @@ def combine_segs(segs):
     bcx, bcy = (seg1[:2] + seg2[:2]) / 2.0
     bh = np.mean(segs[:, 3])
     bw = max_dist + (seg1[2] + seg2[2]) / 2.0
-    return bcx, bcy, bw, bh, bar_theta, b
+    
+    if return_bias:
+        return bcx, bcy, bw, bh, bar_theta, b# bias is useful for debugging.
+    else:
+        return bcx, bcy, bw, bh, bar_theta
             

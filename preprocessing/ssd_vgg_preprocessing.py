@@ -227,8 +227,8 @@ def distorted_bounding_box_crop(image,
         # Update bounding boxes: resize and filter out.
         bboxes = tfe.bboxes_resize(distort_bbox, bboxes)
         xs, ys = tfe.oriented_bboxes_resize(distort_bbox, xs, ys)
-        #labels, bboxes, xs, ys = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
-        #                                           threshold=BBOX_CROP_OVERLAP, assign_negative = True)
+#         labels, bboxes, xs, ys = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
+#                                                 threshold=BBOX_CROP_OVERLAP, assign_negative = False)
         return cropped_image, labels, bboxes, xs, ys, distort_bbox
 
 

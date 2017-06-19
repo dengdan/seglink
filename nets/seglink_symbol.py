@@ -3,6 +3,7 @@ import tensorflow.contrib.slim as slim
 import net_factory
 import config
 
+
 class SegLinkNet(object):
     def __init__(self, inputs, basenet_type = 'vgg'):
         self.inputs = inputs;
@@ -19,6 +20,7 @@ class SegLinkNet(object):
         return shapes
     def get_shape(self, name):
         return self.shapes[name] 
+    
     def _build_network(self):
         with tf.variable_scope(self.basenet_type):
             basenet, end_points = net_factory.get_basenet(self.basenet_type, self.inputs);

@@ -1,7 +1,5 @@
 import numpy as np
 import tensorflow as tf
-from nets import anchor_layer
-from nets import seglink_symbol
 global feat_shapes
 global image_shape
 global default_anchors
@@ -28,6 +26,9 @@ def _set_feat_shapes(shapes):
     feat_shapes = shapes
     
 def init_config(image_shape):
+    from nets import anchor_layer
+    from nets import seglink_symbol
+
     h, w = image_shape
     fake_image = tf.ones((1, h, w, 3))
     fake_net = seglink_symbol.SegLinkNet(inputs = fake_image)
