@@ -12,7 +12,6 @@ from nets import seglink_symbol
 from nets import anchor_layer
 slim = tf.contrib.slim
 import config
-DATA_FORMAT = 'NHWC'
 
 # =========================================================================== #
 # I/O and preprocessing Flags.
@@ -62,8 +61,7 @@ def main(_):
     
     with tf.Graph().as_default():
         # Select the dataset.
-        dataset = dataset_factory.get_dataset(
-            FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
+        dataset = dataset_factory.get_dataset(FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
 
         util.proc.set_proc_name(FLAGS.model_name + '_' + FLAGS.dataset_name)
 
@@ -100,27 +98,31 @@ def main(_):
             image, glabels, gbboxes, gxs, gys = \
                             ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
                                                                out_shape=image_shape,
-                                                               data_format=DATA_FORMAT,
+                                                               data_format = config.data_format, 
                                                                is_training = True)
             image = tf.identity(image, 'processed_image')
             
             
             # calculate ground truth
-            seg_labels, seg_gt, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
+            seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
             
             # batch them
-            b_image, b_seg_labels, b_seg_gt, b_link_gt = tf.train.batch(
-                [image, seg_labels, seg_gt, link_gt],
+            b_image, b_seg_label, b_seg_loc, b_link_gt = tf.train.batch(
+                [image, seg_label, seg_loc, link_gt],
                 batch_size = batch_size,
                 num_threads=FLAGS.num_preprocessing_threads,
                 capacity = 50 * batch_size)
                 
             batch_queue = slim.prefetch_queue.prefetch_queue(
-                [b_image, b_seg_labels, b_seg_gt, b_link_gt],
+                [b_image, b_seg_label, b_seg_loc, b_link_gt],
                 capacity = 2) 
 
-            # loss
-            
-                
+            def clone_fn():
+                b_image, b_seg_label, b_seg_loc, b_link_gt = batch_queue.dequeue()
+                with slim.arg_scope([slim.conv2d], weights_regularizer=slim.l2_regularizer(FLAGS.weight_decay)):
+                    net = seglink_symbol.SegLinkNet(inputs = b_image, data_format = config.data_format)
+                    loss = net.build_loss(seg_label = b_seg_label, seg_loc = b_seg_loc, link_gt = b_link_gt,
+                                          seg_loc_loss_weight = 1.0, link_conf_loss_weight = 1.0)
+                    
 if __name__ == '__main__':
     tf.app.run()

@@ -22,14 +22,22 @@ class SegLinkNet(object):
         return self.shapes[name] 
     
     def _build_network(self):
-        with tf.variable_scope(self.basenet_type):
-            basenet, end_points = net_factory.get_basenet(self.basenet_type, self.inputs);
-            
-        with tf.variable_scope('extra_layers'):
-            self.net, self.end_points = self._add_extra_layers(basenet, end_points);
-        
-        with tf.variable_scope('seg_link_layers'):
-            self._add_seg_link_layers();
+        with slim.arg_scope([slim.conv2d],
+                        activation_fn=tf.nn.relu,
+                        weights_initializer=tf.contrib.layers.xavier_initializer(),
+                        biases_initializer=tf.zeros_initializer()):
+            with slim.arg_scope([slim.conv2d, slim.max_pool2d],
+                                padding='SAME',
+                                data_format = self.data_format):
+
+                with tf.variable_scope(self.basenet_type):
+                    basenet, end_points = net_factory.get_basenet(self.basenet_type, self.inputs);
+                    
+                with tf.variable_scope('extra_layers'):
+                    self.net, self.end_points = self._add_extra_layers(basenet, end_points);
+                
+                with tf.variable_scope('seg_link_layers'):
+                    self._add_seg_link_layers();
         
     def _add_extra_layers(self, inputs, end_points):
         # Additional SSD blocks.
@@ -95,13 +103,101 @@ class SegLinkNet(object):
             all_seg_offsets.append(seg_offsets)
             all_within_layer_link_scores.append(within_layer_link_scores)
             all_cross_layer_link_scores.append(cross_layer_link_scores)
-        self.seg_scores = reshape_and_concat(all_seg_scores) # (batch_size, N, 2)
+            
+        self.seg_scores_logits = reshape_and_concat(all_seg_scores) # (batch_size, N, 2)
+        self.seg_scoress = slim.softmax(self.seg_scores_logits) # (batch_size, N, 2)
         self.seg_offsets = reshape_and_concat(all_seg_offsets) # (batch_size, N, 5)
         self.cross_layer_link_scores = reshape_and_concat(all_cross_layer_link_scores)  # (batch_size, 8N, 2)
         self.within_layer_link_scores = reshape_and_concat(all_within_layer_link_scores)  # (batch_size, 4(N - N_conv4_3), 2)
-        self.link_scores = tf.concat([self.within_layer_link_scores, self.cross_layer_link_scores], axis = 1)
+        self.link_scores_logits = tf.concat([self.within_layer_link_scores, self.cross_layer_link_scores], axis = 1)
+        self.link_scores = slim.softmax(self.link_scores_logits)
         
         
+    def build_loss(self, seg_label, seg_loc, link_label, seg_loc_loss_weight, link_conf_loss_weight, max_neg_pos_ratio = 3):
+        batch_size = tensor_shape(self.inputs)[0]
+        def OHNM_single_image(scores, n_pos, neg_mask):
+            """Online Hard Negative Mining.
+                scores: the scores of being predicted as negative cls
+                n_pos: the number of positive samples 
+                neg_mask: mask of negative samples
+                Return:
+                    the mask of selected negative samples.
+                    if n_pos == 0, no negative samples will be selected.
+            """
+            def has_pos():
+                n_neg = n_pos * max_neg_pos_ratio
+                max_neg_entries = np.sum(tf.cast(neg_mask, tf.float32))
+                n_neg = tf.minimum(n_neg, max_neg_entries)
+                n_neg = tf.cast(n_neg, tf.int32)
+                neg_conf = tf.where(scores, neg_mask)
+                vals, _ = tf.nn.top_k(-neg_conf, k=n_neg)
+                threshold = vals[-1]# a negtive value
+                selected_neg_mask = tf.logical_and(neg_mask, scores <= -threshold)
+                return selected_neg_mask
+                
+            def no_pos():
+                return tf.zeros_like(neg_mask)
+            
+            return tf.cond(n_pos > 0, has_pos, no_pos) 
+        
+        def OHNM_batch(neg_conf, pos_mask, neg_mask):
+            selected_neg_mask = []
+            for img_idx in xrange(batch_size):
+                image_neg_conf = neg_conf[image_idx, :]
+                image_neg_mask = neg_mask[image_idx, :]
+                image_pos_mask = pos_mask[image_idx, :]
+                n_pos = tf.reduce_sum(tf.cast(image_pos_mask, tf.int32))
+                selected_neg_mask.append(OHNM_single_image(image_neg_conf, n_pos, image_neg_mask))
+                
+            selected_neg_mask = tf.stack(selected_neg_mask)
+            selected_mask = pos_mask + selected_neg_mask
+            return selected_mask
+                
+
+
+        # OHNM on segments
+        seg_neg_scores = self.seg_scores[:, :, 0]
+        seg_pos_mask = seg_label == 1
+        seg_neg_mask = tf.logical_not(seg_pos_mask)
+        seg_selected_mask = OHNM_batch(seg_neg_scores, seg_pos_mask, seg_neg_mask)
+        n_seg_pos = tf.reduce_sum(tf.cast(seg_pos_mask, tf.int32))
+        
+        
+        with tf.name_scope('seg_cls_loss'):            
+            def has_pos():
+                seg_cls_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits = self.seg_scores_logits, labels = seg_label)
+                return tf.reduce_sum(seg_cls_loss * seg_selected_mask) / n_seg_pos
+            def no_pos():
+                return tf.constant(.0);
+            seg_cls_loss = tf.cond(n_seg_pos > 0, has_pos, no_pos)
+            tf.add_to_collection(tf.GraphKeys.LOSSES, seg_cls_loss)
+        
+        def smooth_l1_loss(pred, target, weights):
+                diff = pred - target
+                abs_diff = tf.abs(diff)
+                abs_diff_lt_1 = tf.less(abs_diff, 1)
+                loss = tf.reduce_sum(tf.where(abs_diff_lt_1, 0.5 * tf.square(abs_diff), abs_diff - 0.5), axis = 2)
+                return tf.reduce_sum(loss * weights)
+
+        with tf.name_scope('seg_loc_loss'):            
+            seg_loc_loss = smooth_l1_loss(self.seg_offsets, seg_loc, seg_pos_mask) * seg_loc_loss_weight
+            tf.add_to_collection(tf.GraphKeys.LOSSES, seg_loc_loss)
+
+        
+        link_neg_scores = self.link_scores[:,:,0]
+        link_pos_mask = link_label == 1
+        link_neg_mask = tf.logical_not(link_pos_mask)
+        link_selected_mask = OHNM_batch(link_neg_scores, link_pos_mask, link_neg_mask)
+        n_link_pos = tf.reduce_sum(tf.cast(link_pos_mask, dtype = tf.float32))
+        with tf.name_scope('link_cls_loss'):
+            def has_pos():
+                link_cls_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits = self.link_scores_logits, labels = link_label)
+                return tf.reduce_sum(link_cls_loss * link_selected_mask) / n_link_pos
+            def no_pos():
+                return tf.constant(.0);
+            seg_cls_loss = tf.cond(n_link_pos > 0, has_pos, no_pos)
+            tf.add_to_collection(tf.GraphKeys.LOSSES, seg_cls_loss)
+            
 def reshape_and_concat(tensors):
     def reshape(t):
         shape = tensor_shape(t)
@@ -114,11 +210,10 @@ def reshape_and_concat(tensors):
             t = tf.reshape(t, [shape[0], -1, shape[-1]])
         else:
             raise ValueError("invalid tensor shape: %s, shape = %s"%(t.name, shape)) 
-        return t;                   
+        return t;
     reshaped_tensors = [reshape(t) for t in tensors if t is not None]
     return tf.concat(reshaped_tensors, axis = 1)
     
 def tensor_shape(t):
     t.get_shape().assert_is_fully_defined()
     return t.get_shape().as_list()
-    

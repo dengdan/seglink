@@ -370,7 +370,7 @@ def preprocess_image(image,
                      bboxes,
                      xs, ys,
                      out_shape,
-                     data_format,
+                     data_format = 'NHWC',
                      is_training=False,
                      **kwargs):
     """Pre-process an given image.

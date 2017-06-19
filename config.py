@@ -16,7 +16,7 @@ max_height_ratio = 1.5 * 2
 seg_confidence_threshold = 0.5
 link_confidence_threshold = 0.5
 
-
+data_format = 'NHWC'
 def _set_image_shape(shape):
     global image_shape
     image_shape = shape
