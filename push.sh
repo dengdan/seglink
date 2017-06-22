@@ -1,4 +1,4 @@
 git add . --all
-git commit -m "multi gpu training code is added, and to be tested"
+git commit -m "multi gpu training can start running now, but dose not converge"
 git push -u origin master
 

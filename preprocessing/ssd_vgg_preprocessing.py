@@ -38,7 +38,7 @@ _G_MEAN = 117.
 _B_MEAN = 104.
 
 # Some training pre-processing parameters.
-BBOX_CROP_OVERLAP = 0.5         # Minimum overlap to keep a bbox after cropping.
+BBOX_CROP_OVERLAP = 0.1         # Minimum overlap to keep a bbox after cropping.
 MIN_OBJECT_COVERED = 0.5
 CROP_ASPECT_RATIO_RANGE = (0.5, 2.)  # Distortion ratio during cropping.
 EVAL_SIZE = (300, 300)
@@ -227,8 +227,8 @@ def distorted_bounding_box_crop(image,
         # Update bounding boxes: resize and filter out.
         bboxes = tfe.bboxes_resize(distort_bbox, bboxes)
         xs, ys = tfe.oriented_bboxes_resize(distort_bbox, xs, ys)
-#         labels, bboxes, xs, ys = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
-#                                                 threshold=BBOX_CROP_OVERLAP, assign_negative = False)
+        labels, bboxes, xs, ys = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
+                                                threshold=BBOX_CROP_OVERLAP, assign_negative = False)
         return cropped_image, labels, bboxes, xs, ys, distort_bbox
 
 
@@ -259,16 +259,17 @@ def preprocess_for_train(image, labels, bboxes, xs, ys,
         # Convert to float scaled [0, 1].
         if image.dtype != tf.float32:
             image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-        tf_summary_image(image, bboxes, 'image_with_bboxes')
+#         tf_summary_image(image, bboxes, 'image_with_bboxes')
 
 
         # Distort image and bounding boxes.
         dst_image = image
         dst_image, labels, bboxes, xs, ys, distort_bbox = \
             distorted_bounding_box_crop(image, labels, bboxes, xs, ys,
-                                        min_object_covered=MIN_OBJECT_COVERED,
-                                        aspect_ratio_range=CROP_ASPECT_RATIO_RANGE, 
-                                        area_range=AREA_RANGE)
+                                        min_object_covered = MIN_OBJECT_COVERED,
+                                        aspect_ratio_range = CROP_ASPECT_RATIO_RANGE, 
+                                        area_range = AREA_RANGE)
+            
         # Resize image to output size.
         dst_image = tf_image.resize_image(dst_image, out_shape,
                                           method=tf.image.ResizeMethod.BILINEAR,

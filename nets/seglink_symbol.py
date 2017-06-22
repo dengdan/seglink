@@ -5,12 +5,20 @@ import config
 
 
 class SegLinkNet(object):
-    def __init__(self, inputs, weight_decay = None, basenet_type = 'vgg', data_format = 'NHWC'):
+    def __init__(self, inputs, weight_decay = None, basenet_type = 'vgg', data_format = 'NHWC',  
+                                weights_initializer = None, biases_initializer = None):
         self.inputs = inputs;
         self.weight_decay = weight_decay
         self.feat_layers = config.feat_layers
         self.basenet_type = basenet_type;
         self.data_format = data_format;
+        if weights_initializer is None:
+            weights_initializer = tf.contrib.layers.xavier_initializer()
+        if biases_initializer is None:
+            biases_initializer = tf.zeros_initializer()
+        self.weights_initializer = weights_initializer
+        self.biases_initializer = biases_initializer
+        
         self._build_network();
         self.shapes = self.get_shapes();
     def get_shapes(self):
@@ -18,17 +26,17 @@ class SegLinkNet(object):
             
         for layer in self.end_points:
             shapes[layer] = tensor_shape(self.end_points[layer])[1:-1]
-            
         return shapes
     def get_shape(self, name):
         return self.shapes[name] 
     
     def _build_network(self):
+            
         with slim.arg_scope([slim.conv2d],
                         activation_fn=tf.nn.relu,
                         weights_regularizer=slim.l2_regularizer(self.weight_decay),
-                        weights_initializer=tf.contrib.layers.xavier_initializer(),
-                        biases_initializer=tf.zeros_initializer()):
+                        weights_initializer= self.weights_initializer,
+                        biases_initializer = self.biases_initializer):
             with slim.arg_scope([slim.conv2d, slim.max_pool2d],
                                 padding='SAME',
                                 data_format = self.data_format):
@@ -38,8 +46,8 @@ class SegLinkNet(object):
                 with tf.variable_scope('extra_layers'):
                     self.net, self.end_points = self._add_extra_layers(basenet, end_points);
                 
-                with tf.variable_scope('seg_link_layers'):
-                    self._add_seg_link_layers();
+                with tf.variable_scope('seglink_layers'):
+                    self._add_seglink_layers();
         
     def _add_extra_layers(self, inputs, end_points):
         # Additional SSD blocks.
@@ -61,39 +69,53 @@ class SegLinkNet(object):
         end_points['conv9_2'] = net
         
         
-        net = slim.conv2d(net, 128, [1, 1], scope='conv10_1')
-        net = slim.conv2d(net, 256, [2, 2], scope='conv10_2', padding='VALID')
-        end_points['conv10_2'] = net
+#         net = slim.conv2d(net, 128, [1, 1], scope='conv10_1')
+        
+        # Padding to use kernel of size 4, to be compatible with caffe ssd model
+        # The minimal input dimension should be 512, resulting in 2x2. After padding, it becomes 4x4
+#         paddings = [[0, 0], [1, 1], [1, 1], [0, 0]]
+#         net = tf.pad(net, paddings)
+#         net = slim.conv2d(net, 256, [4, 4], scope='conv10_2', padding='VALID')
+#         end_points['conv10_2'] = net
         return net, end_points;    
     
     def _build_seg_link_layer(self, layer_name):
         net = self.end_points[layer_name]
         batch_size, h, w = tensor_shape(net)[:-1]
         
-        # segment scores
-        num_cls_pred = 2
-        seg_scores = slim.conv2d(net, num_cls_pred, [3, 3], activation_fn = None, scope='seg_scores')
-        
-        # segment offsets
-        num_offset_pred = 5
-        seg_offsets = slim.conv2d(net, num_offset_pred, [3, 3], activation_fn = None, scope = 'seg_offsets')
-        
-        # within-layer link scores
-        num_within_layer_link_scores_pred = 16
-        within_layer_link_scores = slim.conv2d(net, num_within_layer_link_scores_pred, [3, 3], activation_fn = None, scope = 'within_layer_link_scores')
-        within_layer_link_scores = tf.reshape(within_layer_link_scores, tensor_shape(within_layer_link_scores)[:-1] + [8, 2])
-
-        # cross-layer link scores
-        num_cross_layer_link_scores_pred = 8
-        cross_layer_link_scores = None;
-        if layer_name != 'conv4_3':
-            cross_layer_link_scores = slim.conv2d(net, num_cross_layer_link_scores_pred, [3, 3], activation_fn = None, scope = 'cross_layer_link_scores')
-            cross_layer_link_scores = tf.reshape(cross_layer_link_scores, tensor_shape(cross_layer_link_scores)[:-1] + [4, 2])
+        if layer_name == 'conv4_3':
+            net = tf.nn.l2_normalize(net, -1) * 20
+            
+        with slim.arg_scope([slim.conv2d],
+                activation_fn = None,
+                weights_regularizer=slim.l2_regularizer(self.weight_decay), 
+                weights_initializer = tf.contrib.layers.xavier_initializer(),
+                biases_initializer = tf.zeros_initializer()):
+            
+            # segment scores
+            num_cls_pred = 2
+            seg_scores = slim.conv2d(net, num_cls_pred, [3, 3], scope='seg_scores')
+            
+            # segment offsets
+            num_offset_pred = 5
+            seg_offsets = slim.conv2d(net, num_offset_pred, [3, 3], scope = 'seg_offsets')
+            
+            # within-layer link scores
+            num_within_layer_link_scores_pred = 16
+            within_layer_link_scores = slim.conv2d(net, num_within_layer_link_scores_pred, [3, 3], scope = 'within_layer_link_scores')
+            within_layer_link_scores = tf.reshape(within_layer_link_scores, tensor_shape(within_layer_link_scores)[:-1] + [8, 2])
+    
+            # cross-layer link scores
+            num_cross_layer_link_scores_pred = 8
+            cross_layer_link_scores = None;
+            if layer_name != 'conv4_3':
+                cross_layer_link_scores = slim.conv2d(net, num_cross_layer_link_scores_pred, [3, 3], scope = 'cross_layer_link_scores')
+                cross_layer_link_scores = tf.reshape(cross_layer_link_scores, tensor_shape(cross_layer_link_scores)[:-1] + [4, 2])
 
         return seg_scores, seg_offsets, within_layer_link_scores, cross_layer_link_scores
     
     
-    def _add_seg_link_layers(self):
+    def _add_seglink_layers(self):
         all_seg_scores = []
         all_seg_offsets = []
         all_within_layer_link_scores = []
