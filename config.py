@@ -42,7 +42,7 @@ def _set_batch_size(bz):
     global batch_size
     batch_size = bz
     
-def init_config(image_shape, batch_size = 1, weight_decay = None, num_gpus = 1):
+def init_config(image_shape, batch_size = 1, weight_decay = 0.0005, num_gpus = 1):
     from nets import anchor_layer
     from nets import seglink_symbol
 
@@ -59,7 +59,6 @@ def init_config(image_shape, batch_size = 1, weight_decay = None, num_gpus = 1):
         
     fake_image = tf.ones((1, h, w, 3))
     fake_net = seglink_symbol.SegLinkNet(inputs = fake_image, weight_decay = weight_decay)
-    # TODO: how to delete these created temp variables 
     feat_shapes = fake_net.get_shapes();
     
     # the placement of this following lines are extremely important

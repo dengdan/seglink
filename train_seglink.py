@@ -40,10 +40,10 @@ tf.app.flags.DEFINE_float('weight_decay', 0.0005, 'The weight decay on the model
 # I/O and preprocessing Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_integer(
-    'num_readers', 4,
+    'num_readers', 12,
     'The number of parallel readers that read data from the dataset.')
 tf.app.flags.DEFINE_integer(
-    'num_preprocessing_threads', 1,
+    'num_preprocessing_threads', 4,
     'The number of threads used to create the batches.')
 
 # =========================================================================== #
@@ -92,8 +92,8 @@ def create_dataset_batch_queue(dataset):
             provider = slim.dataset_data_provider.DatasetDataProvider(
                 dataset,
                 num_readers=FLAGS.num_readers,
-                common_queue_capacity=20 * config.batch_size,
-                common_queue_min=10 * config.batch_size,
+                common_queue_capacity=50 * config.batch_size,
+                common_queue_min=30 * config.batch_size,
                 shuffle=True)
         # Get for SSD network: image, labels, bboxes.
         [image, shape, glabels, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get(['image', 'shape',

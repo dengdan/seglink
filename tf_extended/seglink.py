@@ -27,9 +27,12 @@ def is_anchor_center_in_rect(anchor, xs, ys, bbox_idx):
     
 def min_area_rect(xs, ys):
     """
-    xs: numpy ndarray of shape N*4, [x1, x2, x3, x4]
-    ys: numpy ndarray of shape N*4, [y1, y2, y3, y4]
-    return the oriented rects sorrounding the box represented by [(x1, y1), (x2, y2), (x3, y3), (x4, y4)]
+    Params:
+        xs: numpy ndarray with shape=(N,4). N is the number of oriented bboxes. 4 contains [x1, x2, x3, x4]
+        ys: numpy ndarray with shape=(N,4), [y1, y2, y3, y4]
+            Note that [(x1, y1), (x2, y2), (x3, y3), (x4, y4)] can represent an oriented bbox.
+    Return:
+        the oriented rects sorrounding the box, in the format:[cx, cy, w, h, theta]. 
     """
     xs = np.asarray(xs, dtype = np.float32)
     ys = np.asarray(ys, dtype = np.float32)
@@ -52,13 +55,34 @@ def min_area_rect(xs, ys):
 def transform_cv_rect(rects):
     """Transform the rects from opencv method minAreaRect to our rects. 
     Step 1 of Figure 5 in seglink paper
-    rects: (5, ) or (N, 5)
+
+    In cv2.minAreaRect, the w, h and theta values in the returned rect are not convenient to use (at least for me), so 
+            the Oriented (or rotated) Rectangle object in seglink algorithm is defined different from cv2.
+    
+    Rect definition in Seglink:
+        1. The angle value between a side and x-axis is:
+            positive: if it rotates clockwisely, with y-axis increasing downwards.
+            negative: if it rotates counter-clockwisely.
+            This is opposite to cv2, and it is only a personal preference. 
+        
+        2. The width is the length of side taking a smaller absolute angle with the x-axis. 
+        3. The theta value of a rect is the signed angle value between width-side and x-axis
+        4. To rotate a rect to horizontal direction, just rotate its width-side horizontally,
+             i.e., rotate it by a angle of theta using cv2 method. 
+             (see the method rotate_oriented_bbox_to_horizontal for rotation detail)
+            
+    
+    Params:
+        rects: ndarray with shape = (5, ) or (N, 5).
+    Return:
+        transformed rects.
     """
     only_one = False
     if len(np.shape(rects)) == 1:
         rects = np.expand_dims(rects, axis = 0)
         only_one = True
     assert np.shape(rects)[1] == 5, 'The shape of rects must be (N, 5), but meet %s'%(str(np.shape(rects)))
+    
     rects = np.asarray(rects, dtype = np.float32).copy()
     num_rects = np.shape(rects)[0]
     for idx in xrange(num_rects):
@@ -75,15 +99,18 @@ def transform_cv_rect(rects):
 
 def rotate_oriented_bbox_to_horizontal(center, bbox):
     """
-    center: the center of rotation
-    bbox: [cx, cy, w, h, theta]
     Step 2 of Figure 5 in seglink paper
+    
+    Rotate bbox horizontally along a `center` point
+    Params:
+        center: the center of rotation
+        bbox: [cx, cy, w, h, theta]
     """
     assert np.shape(center) == (2, ), "center must be a vector of length 2"
     assert np.shape(bbox) == (5, ) or np.shape(bbox) == (4, ), "bbox must be a vector of length 4 or 5"
     bbox = np.asarray(bbox.copy(), dtype = np.float32)
     
-    cx, cy, w, h, theta = bbox[...];
+    cx, cy, w, h, theta = bbox;
     M = cv2.getRotationMatrix2D(center, theta, scale = 1) # 2x3
     
     cx, cy = np.dot(M, np.transpose([cx, cy, 1]))
@@ -93,20 +120,28 @@ def rotate_oriented_bbox_to_horizontal(center, bbox):
 
 def crop_horizontal_bbox_using_anchor(bbox, anchor):
     """Step 3 in Figure 5 in seglink paper
+    The crop operation is operated only on the x direction.
+    Params:
+        bbox: a horizontal bbox with shape = (5, ) or (4, ). 
     """
     assert np.shape(anchor) == (4, ), "anchor must be a vector of length 4"
     assert np.shape(bbox) == (5, ) or np.shape(bbox) == (4, ), "bbox must be a vector of length 4 or 5"
+    
+    # xmin and xmax of the anchor    
     acx, acy, aw, ah = anchor
     axmin = acx - aw / 2.0;
     axmax = acx + aw / 2.0;
     
+    # xmin and xmax of the bbox
     cx, cy, w, h = bbox[0:4]
     xmin = cx - w / 2.0
     xmax = cx + w / 2.0
     
+    # clip operation
     xmin = max(xmin, axmin)
     xmax = min(xmax, axmax)
     
+    # transform xmin, xmax to cx and w
     cx = (xmin + xmax) / 2.0;
     w = xmax - xmin
     bbox = bbox.copy()
@@ -115,22 +150,28 @@ def crop_horizontal_bbox_using_anchor(bbox, anchor):
 
 def rotate_horizontal_bbox_to_oriented(center, bbox):
     """
-    center: the center of rotation
-    bbox: [cx, cy, w, h, theta]
-    Step 4 of Figure 5 in seglink paper
+    Step 4 of Figure 5 in seglink paper: 
+        Rotate the cropped horizontal bbox back to its original direction
+    Params:
+        center: the center of rotation
+        bbox: [cx, cy, w, h, theta]
+    Return: the oriented bbox
     """
     assert np.shape(center) == (2, ), "center must be a vector of length 2"
-    assert np.shape(bbox) == (5, ) or np.shape(bbox) == (4, ), "bbox must be a vector of length 4 or 5"
+    assert np.shape(bbox) == (5, ) , "bbox must be a vector of length 4 or 5"
     bbox = np.asarray(bbox.copy(), dtype = np.float32)
     
-    cx, cy, w, h, theta = bbox[...];
+    cx, cy, w, h, theta = bbox;
     M = cv2.getRotationMatrix2D(center, -theta, scale = 1) # 2x3
     cx, cy = np.dot(M, np.transpose([cx, cy, 1]))
     bbox[0:2] = [cx, cy]
     return bbox
 
 
-def cal_seg_gt_for_single_anchor(anchor, rect):
+def cal_seg_loc_for_single_anchor(anchor, rect):
+    """
+    Step 2 to 4
+    """
     # rotate text box along the center of anchor to horizontal direction
     center = (anchor[0], anchor[1])
     rect = rotate_oriented_bbox_to_horizontal(center, rect)
@@ -141,13 +182,15 @@ def cal_seg_gt_for_single_anchor(anchor, rect):
     # rotate the box to original direction
     rect = rotate_horizontal_bbox_to_oriented(center, rect)
     
-    
     return rect    
     
 
 def match_anchor_to_text_boxes(anchors, xs, ys):
     """Match anchors to text boxes. 
-       The match results are stored in a vector, each of whose is the index of matched box if >=0, and returned.
+       Return:
+           seg_labels: shape = (N,), the seg_labels of segments. each value is the index of matched box if >=0.  
+           seg_locations: shape = (N, 5), the absolute location of segments. Only the match segments are correctly calculated.
+           
     """
     
     assert len(np.shape(anchors)) == 2 and np.shape(anchors)[1] == 4, "the anchors must be a tensor with shape = (num_anchors, 4)"
@@ -157,28 +200,30 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
     ys = np.asarray(ys, dtype = np.float32)
     
     num_anchors = anchors.shape[0]
-    labels = np.ones((num_anchors, ), dtype = np.int32) * -1;
-    seg_gt = np.zeros((num_anchors, 5), dtype = np.float32)
+    seg_labels = np.ones((num_anchors, ), dtype = np.int32) * -1;
+    seg_locations = np.zeros((num_anchors, 5), dtype = np.float32)
     
-    # to avoid ln(0)
-    seg_gt[:, 2] = anchors[:, 2]
-    seg_gt[:, 3] = anchors[:, 3]
+    # to avoid ln(0) in the ending process later.
+    #     because the height and width will be encoded using ln(w_seg / w_anchor)
+    seg_locations[:, 2] = anchors[:, 2]
+    seg_locations[:, 3] = anchors[:, 3]
     
     num_bboxes = xs.shape[0]
     
     
-    #represent bboxes with min area rects
+    #represent bboxes using min area rects
     rects = min_area_rect(xs, ys) # shape = (num_bboxes, 5)
     rects = transform_cv_rect(rects)
     assert rects.shape == (num_bboxes, 5)
     
-    #represent bboxes with contours
+    #represent bboxes using contours
     cnts = []
     for bbox_idx in xrange(num_bboxes):
         bbox_points = zip(xs[bbox_idx, :], ys[bbox_idx, :])
         cnt = util.img.points_to_contour(bbox_points);
         cnts.append(cnt)
-    # match
+        
+    # match anchor to bbox
     for anchor_idx in xrange(num_anchors):
         anchor = anchors[anchor_idx, :]
         acx, acy, aw, ah = anchor
@@ -187,25 +232,21 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
         height_matched = False
         for bbox_idx in xrange(num_bboxes):
             # center point check
-
             center_point_matched = util.img.is_in_contour((acx, acy), cnts[bbox_idx])
             if not center_point_matched:
                 continue
                 
-            # height ratio check
+            # height height_ratio check
             rect = rects[bbox_idx, :]
-            cx, cy, w, h = rect[0:4]
-            height = min(w, h);
-            ratio = aw / height # aw == ah
-            height_matched = max(ratio, 1/ratio) <= config.max_height_ratio
+            height_ratio = anchor_rect_height_ratio(anchor, rect)
+            height_matched = height_ratio <= config.max_height_ratio
             if height_matched and center_point_matched:
                 # an anchor can only be matched to at most one bbox
-                labels[anchor_idx] = bbox_idx
-                seg_gt[anchor_idx, :] = cal_seg_gt_for_single_anchor(anchor, rect)
+                seg_labels[anchor_idx] = bbox_idx
+                seg_locations[anchor_idx, :] = cal_seg_loc_for_single_anchor(anchor, rect)
         
         
-        
-    return labels, seg_gt
+    return seg_labels, seg_locations
 
 
 
@@ -266,6 +307,10 @@ def get_cross_layer_neighbours(x, y):
     return [(2 * x, 2 * y), (2 * x + 1, 2 * y), (2 * x, 2 * y + 1), (2 * x + 1, 2 * y + 1)]
     
 def is_valid_cord(x, y, w, h):
+    """
+    Tell whether the 2D coordinate (x, y) is valid or not.
+    If valid, it should be on an h x w image
+    """
     return x >=0 and x < w and y >= 0 and y < h;
 
 def cal_link_gt(labels):
@@ -276,26 +321,34 @@ def cal_link_gt(labels):
         layer_match_result = layer_labels[layer_name]
         h, w = config.feat_shapes[layer_name]
         
+        # initalize link groundtruth for the current layer
         inter_layer_link_gt = np.zeros((h, w, 8), dtype = np.int32)
         
-        if layer_idx > 0:
+        if layer_idx > 0: # no cross-layer link for the first layer. 
             cross_layer_link_gt = np.zeros((h, w, 4), dtype = np.int32)
             
         for x in xrange(w):
             for y in xrange(h):
+                # the value in layer_match_result stands for the bbox idx a segments matches 
+                # if less than 0, not matched.
+                # only matched segments are considered in link_gt calculation
                 if layer_match_result[y, x] >= 0:
                     matched_idx = layer_match_result[y, x]
                     
-                    # inter layer
+                    
+                    # inter-layer link_gt calculation
+                    # calculate inter-layer link_gt using the bbox matching result of inter-layer neighbours 
                     neighbours = get_inter_layer_neighbours(x, y)
-                    for nidx, nxy in enumerate(neighbours):
+                    for nidx, nxy in enumerate(neighbours): # n here is short for neighbour
                         nx, ny = nxy
                         if is_valid_cord(nx, ny, w, h):
                             n_matched_idx = layer_match_result[ny, nx]
-                            if matched_idx == n_matched_idx:
+                            # if the current default box has matched the same bbox with this neighbour, \
+                            # the linkage connecting them is labeled as positive.
+                            if matched_idx == n_matched_idx: 
                                 inter_layer_link_gt[y, x, nidx] = 1;
                                 
-                    # cross layer
+                    # cross layer link_gt calculation
                     if layer_idx > 0:
                         previous_layer_name = config.feat_layers[layer_idx - 1];
                         ph, pw = config.feat_shapes[previous_layer_name]
@@ -313,43 +366,78 @@ def cal_link_gt(labels):
         if layer_idx > 0:
             cross_layer_link_gts.append(cross_layer_link_gt)
     
+    # construct the final link_gt from layer-wise data.
+    # note that this reshape and concat order is the same with that of predicted linkages, which\
+    #     has been done in the construction of SegLinkNet.
     inter_layer_link_gts = np.hstack([np.reshape(t, -1) for t in inter_layer_link_gts]);
     cross_layer_link_gts = np.hstack([np.reshape(t, -1) for t in cross_layer_link_gts]);
     link_gt = np.hstack([inter_layer_link_gts, cross_layer_link_gts])
     return link_gt
 
-def encode_seglink_gt(seg_gt):
+def encode_seg_gt(seg_loc):
+    """
+    Params:
+        seg_loc: a ndarray with shape = (N, 5). It contains the abolute values of segment locations 
+    Return:
+        seg_gt, i.e., the offsets from default boxes. It is used as the final segment location ground truth.
+    """
     anchors = config.default_anchors
     anchor_cx, anchor_cy, anchor_w, anchor_h = (anchors[:, idx] for idx in range(4))
-    seg_cx, seg_cy, seg_w, seg_h = (seg_gt[:, idx] for idx in range(4))
+    seg_cx, seg_cy, seg_w, seg_h = (seg_loc[:, idx] for idx in range(4))
     
+    #encoding using the formulations from Euqation (2) to (6) of seglink paper
+    #    seg_cx = anchor_cx + anchor_w * offset_cx
     offset_cx = (seg_cx - anchor_cx) * 1.0 / anchor_w
-    offset_cy = (seg_cy - anchor_cy) * 1.0 / anchor_h
-    ln_seg_w = np.log(seg_w * 1.0 / anchor_w)
-    ln_seg_h = np.log(seg_h * 1.0 / anchor_h)
     
+    #    seg_cy = anchor_cy + anchor_w * offset_cy
+    offset_cy = (seg_cy - anchor_cy) * 1.0 / anchor_h
+    
+    #    seg_w = anchor_w * e^(offset_w)
+    offset_w = np.log(seg_w * 1.0 / anchor_w)
+    #    seg_h = anchor_w * e^(offset_h)
+    offset_h = np.log(seg_h * 1.0 / anchor_h)
+    
+    # prior scaling can be used to adjust the loss weight of loss on offset x, y, w, h, theta
+    seg_gt = np.zeros_like(seg_loc)
     seg_gt[:, 0] = offset_cx / config.prior_scaling[0]
     seg_gt[:, 1] = offset_cy / config.prior_scaling[1]
-    seg_gt[:, 2] = ln_seg_w / config.prior_scaling[2]
-    seg_gt[:, 3] = ln_seg_h / config.prior_scaling[3]
-    seg_gt[:, 4] = seg_gt[:, 4]  / config.prior_scaling[4]
+    seg_gt[:, 2] = offset_w / config.prior_scaling[2]
+    seg_gt[:, 3] = offset_h / config.prior_scaling[3]
+    seg_gt[:, 4] = seg_loc[:, 4]  / config.prior_scaling[4]
     return seg_gt
 
-def get_all_seglink_gt(xs, ys, normalize = False, bbox_idx_in_label = False):
+def decode_seg_offsets_pred(seg_offsets_pred):
     anchors = config.default_anchors
-    labels, seg_gt = match_anchor_to_text_boxes(anchors, xs, ys);
-    link_gt = cal_link_gt(labels);
-    if normalize:    
-        seg_gt = encode_seglink_gt(seg_gt)
+    anchor_cx, anchor_cy, anchor_w, anchor_h = (anchors[:, idx] for idx in range(4))
     
-    if not bbox_idx_in_label:
-        labels = np.asarray(labels >=0, dtype = np.int32);
-    else:
-        labels = np.asarray(labels, dtype = np.int32);
+    offset_cx = seg_offsets_pred[:, 0] * config.prior_scaling[0]
+    offset_cy = seg_offsets_pred[:, 1] * config.prior_scaling[1]
+    offset_w = seg_offsets_pred[:, 2]  * config.prior_scaling[2] 
+    offset_h = seg_offsets_pred[:, 3]  * config.prior_scaling[3]
+    offset_theta = seg_offsets_pred[:, 4] * config.prior_scaling[4]
     
+    seg_cx = anchor_cx + anchor_w * offset_cx
+    seg_cy = anchor_cy + anchor_h * offset_cy # anchor_h == anchor_w
+    seg_w = anchor_w * np.exp(offset_w)
+    seg_h = anchor_h * np.exp(offset_h)
+    seg_theta = offset_theta
+    
+    seg_loc = np.transpose(np.vstack([seg_cx, seg_cy, seg_w, seg_h, seg_theta]))
+    return seg_loc
+
+
+def get_all_seglink_gt(xs, ys):
+    anchors = config.default_anchors
+    
+    seg_labels, seg_locations = match_anchor_to_text_boxes(anchors, xs, ys);
+    link_gt = cal_link_gt(seg_labels);
+
+    seg_gt = encode_seg_gt(seg_locations)
+    seg_labels = np.asarray(seg_labels >=0, dtype = np.int32);
+
     seg_gt = np.asarray(seg_gt, dtype = np.float32)
     link_gt = np.asarray(link_gt, dtype = np.int32)
-    return labels, seg_gt, link_gt
+    return seg_labels, seg_gt, link_gt
     
 
 def tf_get_all_seglink_gt(xs, ys):
@@ -357,7 +445,7 @@ def tf_get_all_seglink_gt(xs, ys):
     
     xs = xs * w_I
     ys = ys * h_I    
-    labels, seg_gt, link_gt = tf.py_func(get_all_seglink_gt, [xs, ys, True], [tf.int32, tf.float32, tf.int32]);
+    labels, seg_gt, link_gt = tf.py_func(get_all_seglink_gt, [xs, ys], [tf.int32, tf.float32, tf.int32]);
     labels.set_shape([config.num_anchors])
     seg_gt.set_shape([config.num_anchors, 5])
     link_gt.set_shape([config.num_links])
@@ -466,12 +554,13 @@ def group_segs(seg_scores, link_scores):
 ############################################################################################################
 #                       combining segments to bboxes                                                       #
 ############################################################################################################
-def seglink_to_bbox(seg_scores, link_scores, segs, return_bias = False):
+def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred):
     seg_groups = group_segs(seg_scores, link_scores);
+    seg_locs = decode_seg_offsets_pred(seg_offsets_pred)
     bboxes = []
     for group in seg_groups:
-        group = [segs[idx, :] for idx in group]
-        bbox = combine_segs(group, return_bias = return_bias)
+        group = [seg_locs[idx, :] for idx in group]
+        bbox = combine_segs(group)
         bboxes.append(bbox)
     return np.asarray(bboxes)
 

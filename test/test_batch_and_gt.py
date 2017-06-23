@@ -18,7 +18,7 @@ DATA_FORMAT = 'NHWC'
 # I/O and preprocessing Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_integer(
-    'num_readers', 8,
+    'num_readers', 18,
     'The number of parallel readers that read data from the dataset.')
 tf.app.flags.DEFINE_integer(
     'num_preprocessing_threads', 4,
@@ -36,7 +36,7 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_string(
     'dataset_dir', util.io.get_absolute_path('~/dataset/SSD-tf/SynthText'), 'The directory where the dataset files are stored.')
 tf.app.flags.DEFINE_string(
-    'model_name', 'ssd_vgg', 'The name of the architecture to train.')
+    'model_name', 'seglink_vgg', 'The name of the architecture to train.')
 tf.app.flags.DEFINE_integer(
     'batch_size', 2, 'The number of samples in each batch.')
 tf.app.flags.DEFINE_integer('train_image_width', 1024, 'Train image size')
@@ -46,25 +46,6 @@ tf.app.flags.DEFINE_integer('max_number_of_steps', None,
 
 
 FLAGS = tf.app.flags.FLAGS
-    
-def draw_horizontal_rect(mask, rect, text_pos = None, color = util.img.COLOR_GREEN, draw_center = True, center_only = False):
-    if text_pos is not None:
-        if len(rect) == 5:
-            util.img.put_text(mask, pos = text_pos, scale=0.5, text = 'trans: cx=%d, cy=%d, w=%d, h=%d, theta_0=%f'%(rect[0], rect[1], rect[2], rect[3], rect[4]))
-        else:
-            util.img.put_text(mask, pos = text_pos, scale=0.5, text = 'trans: cx=%d, cy=%d, w=%d, h=%d, theta_0=0.0'%(rect[0], rect[1], rect[2], rect[3]))
-    rect = np.asarray(rect, dtype = np.float32)
-    cx, cy, w, h = rect[0:4]
-    xmin = cx - w / 2
-    xmax = cx + w / 2
-    ymin = cy - h / 2
-    ymax = cy + h / 2
-    if draw_center or center_only:
-        util.img.circle(mask, (cx, cy), 3, color = color)
-    
-    if not center_only:
-        util.img.rectangle(mask, (xmin, ymin), (xmax, ymax), color = color)
-    
     
     
 def draw_oriented_rect(mask, rect, text_pos = None, color = util.img.COLOR_RGB_RED):
@@ -78,13 +59,6 @@ def draw_oriented_rect(mask, rect, text_pos = None, color = util.img.COLOR_RGB_R
     cv2.drawContours(mask, [box], 0, color, 1)
     
     
-def points_to_xys(points):
-    points = np.asarray(points, dtype = np.float32)
-    points = np.reshape(points, (-1, 4, 2))
-    xs = points[..., 0]
-    ys = points[..., 1]
-    return xs, ys
-
 def config_initialization():
     if not FLAGS.dataset_dir:
         raise ValueError('You must supply the dataset directory with --dataset_dir')
@@ -94,20 +68,22 @@ def config_initialization():
     image_shape = (FLAGS.train_image_height, FLAGS.train_image_width)
     
 
-    config.init_config(image_shape, batch_size = FLAGS.batch_size, weight_decay = 0.01, num_gpus = 1)
+    config.init_config(image_shape, batch_size = 8)
 
     batch_size = config.batch_size
     batch_size_per_gpu = config.batch_size_per_gpu
         
     tf.summary.scalar('batch_size', batch_size)
     tf.summary.scalar('batch_size_per_gpu', batch_size_per_gpu)
-
+  
     util.proc.set_proc_name(FLAGS.model_name + '_' + FLAGS.dataset_name)
     
-    
-def create_dataset_batch_queue():
-    batch_size = config.batch_size
     dataset = dataset_factory.get_dataset(FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
+#     config.print_config(FLAGS, dataset)
+    return dataset
+    
+def create_dataset_batch_queue(dataset):
+    batch_size = config.batch_size
     with tf.device('/cpu:0'):
         with tf.name_scope(FLAGS.dataset_name + '_data_provider'):
             provider = slim.dataset_data_provider.DatasetDataProvider(
@@ -159,46 +135,48 @@ def create_dataset_batch_queue():
 # Main training routine.
 # =========================================================================== #
 def main(_):
-    config_initialization()
-    batch_queue = create_dataset_batch_queue()
+    util.init_logger()
+    dump_path = util.io.get_absolute_path('~/temp/no-use/seglink/')
+    
+    dataset = config_initialization()
+    batch_queue = create_dataset_batch_queue(dataset)
     batch_size = config.batch_size
     summary_op = tf.summary.merge_all()
     with tf.Session() as sess:
         tf.train.start_queue_runners(sess)
         b_image, b_seg_labels, b_seg_gt, b_link_gt = batch_queue.dequeue()
         batch_idx = 0;
-        train_writer = tf.summary.FileWriter(util.io.get_absolute_path('~/temp/no-use/seglink/'), sess.graph)
+        train_writer = tf.summary.FileWriter(dump_path, sess.graph)
         
-        while True:
-            image_datas, label_datas, seg_datas, link_datas, so = sess.run([b_image, b_seg_labels, b_seg_gt, b_link_gt, summary_op])
+        while True: #batch_idx < 50:
+            @util.dec.print_calling_in_short # print time consumed
+            def run():
+                return sess.run([b_image, b_seg_labels, b_seg_gt, b_link_gt, summary_op])
+            image_data_batch, seg_label_data_batch, seg_gt_data_batch, link_gt_data_batch, summary_op_batch = run()
             for image_idx in xrange(batch_size):
-                train_writer.add_summary(so, batch_idx)
-                image_data = image_datas[image_idx, ...]
-                label_data = label_datas[image_idx, ...]
-                seg_data = seg_datas[image_idx, ...]
-                link_data = link_datas[image_idx, ...]
+                train_writer.add_summary(summary_op_batch, batch_idx)
+                image_data = image_data_batch[image_idx, ...]
+                seg_label_data = seg_label_data_batch[image_idx, ...]
+                seg_gt_data = seg_gt_data_batch[image_idx, ...]
+                link_gt_data = link_gt_data_batch[image_idx, ...]
+                
                 
                 image_data = image_data + [123, 117, 104]
                 image_data = np.asarray(image_data, dtype = np.uint8)
-                h_I, w_I = config.image_shape
-                bboxes = seglink.seglink_to_bbox(seg_scores = label_data, link_scores = link_data, segs = seg_data)
-                if len(bboxes) == 0:
-                    util.plt.imwrite('~/temp/no-use/seglink/no-bboxes/%d_%d.jpg'%(batch_idx, image_idx), image_data)
-                    print "no bboxes on the image"
-                    continue
                 
-                bboxes = bboxes * [w_I, h_I, w_I, h_I, 1]
-                seg_data = seg_data * [w_I, h_I, w_I, h_I, 1]
-                seg_groups = seglink.group_segs(seg_scores = label_data, link_scores = link_data)
-                img = image_data.copy()
-                for group, bbox in zip(seg_groups, bboxes):
-                    for seg_idx in group:
-                        seg = seg_data[seg_idx, :]
-                        #draw_oriented_rect(img, seg, color = util.img.COLOR_RGB_YELLOW)
-                    draw_oriented_rect(img, bbox, color = util.img.COLOR_GREEN)
-                    #draw_line(img, bbox[-2], bbox[-1], color = util.img.COLOR_RGB_RED)
-            util.plt.imwrite('~/temp/no-use/seglink/%d_%d.jpg'%(batch_idx, image_idx), img)
-            print 'batch: %d'%(batch_idx)
+                h_I, w_I = config.image_shape
+                
+                # decode the encoded ground truth back to bboxes
+                bboxes = seglink.seglink_to_bbox(seg_scores = seg_label_data, link_scores = link_gt_data, seg_offsets_pred = seg_gt_data)
+                
+                # draw the bboxes on the image
+                for bbox_idx in xrange(len(bboxes)):
+                    bbox = bboxes[bbox_idx, :] 
+                    draw_oriented_rect(image_data, bbox)
+                
+                image_path = util.io.join_path(dump_path, '%d_%d.jpg'%(batch_idx, image_idx))
+                util.plt.imwrite(image_path, image_data)
+                print 'Make sure that the text on the image are correctly bounding with oriented boxes:', image_path 
             batch_idx += 1
                 
                 

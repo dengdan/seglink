@@ -1,4 +1,4 @@
 git add . --all
-git commit -m "fix bug on gt calculation, add prior_scaling"
+git commit -m "training is OK"
 git push -u origin master
 
