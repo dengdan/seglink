@@ -1,4 +1,4 @@
 git add . --all
-git commit -m "multi gpu training can start running now, but dose not converge"
+git commit -m "fix bug on gt calculation, add prior_scaling"
 git push -u origin master
 

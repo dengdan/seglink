@@ -40,10 +40,10 @@ tf.app.flags.DEFINE_float('weight_decay', 0.0005, 'The weight decay on the model
 # I/O and preprocessing Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_integer(
-    'num_readers', 8,
+    'num_readers', 4,
     'The number of parallel readers that read data from the dataset.')
 tf.app.flags.DEFINE_integer(
-    'num_preprocessing_threads', 4,
+    'num_preprocessing_threads', 1,
     'The number of threads used to create the batches.')
 
 # =========================================================================== #
@@ -144,6 +144,11 @@ def sum_gradients(clone_grads):
             grads.append(g)
         grad = tf.add_n(grads, name = v.op.name + '_summed_gradients')
         averaged_grads.append((grad, v))
+        
+        tf.summary.histogram("variables_and_gradients_" + grad.op.name, grad)
+        tf.summary.histogram("variables_and_gradients_" + v.op.name, v)
+        tf.summary.scalar("variables_and_gradients_" + grad.op.name+'_mean/var_mean', tf.reduce_mean(grad)/tf.reduce_mean(var))
+        tf.summary.scalar("variables_and_gradients_" + v.op.name+'_mean', tf.reduce_mean(var))
     return averaged_grads
 
 

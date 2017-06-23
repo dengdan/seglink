@@ -22,7 +22,7 @@ BATCH_SIZE=`expr $num_gpus \* $IMG_PER_GPU`
 python train_seglink.py \
 			--train_dir=${HOME}/temp/no-use/seglink_debug \
 			--num_gpus=${num_gpus} \
-			--learning_rate=0.00000001 \
+			--learning_rate=0.0001 \
 			--gpu_memory_fraction=-1 \
 			--batch_size=${BATCH_SIZE}\
 			--checkpoint_path=${HOME}/models/ssd-pretrain/seglink

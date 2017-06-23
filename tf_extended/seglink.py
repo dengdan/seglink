@@ -88,7 +88,7 @@ def rotate_oriented_bbox_to_horizontal(center, bbox):
     
     cx, cy = np.dot(M, np.transpose([cx, cy, 1]))
     
-    bbox[0:2] = [cx, cy]
+    bbox[0:2] = [cx, cy] 
     return bbox
 
 def crop_horizontal_bbox_using_anchor(bbox, anchor):
@@ -140,6 +140,8 @@ def cal_seg_gt_for_single_anchor(anchor, rect):
     
     # rotate the box to original direction
     rect = rotate_horizontal_bbox_to_oriented(center, rect)
+    
+    
     return rect    
     
 
@@ -157,7 +159,13 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
     num_anchors = anchors.shape[0]
     labels = np.ones((num_anchors, ), dtype = np.int32) * -1;
     seg_gt = np.zeros((num_anchors, 5), dtype = np.float32)
+    
+    # to avoid ln(0)
+    seg_gt[:, 2] = anchors[:, 2]
+    seg_gt[:, 3] = anchors[:, 3]
+    
     num_bboxes = xs.shape[0]
+    
     
     #represent bboxes with min area rects
     rects = min_area_rect(xs, ys) # shape = (num_bboxes, 5)
@@ -190,12 +198,13 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
             height = min(w, h);
             ratio = aw / height # aw == ah
             height_matched = max(ratio, 1/ratio) <= config.max_height_ratio
-            
             if height_matched and center_point_matched:
                 # an anchor can only be matched to at most one bbox
                 labels[anchor_idx] = bbox_idx
                 seg_gt[anchor_idx, :] = cal_seg_gt_for_single_anchor(anchor, rect)
-                
+        
+        
+        
     return labels, seg_gt
 
 
@@ -309,21 +318,35 @@ def cal_link_gt(labels):
     link_gt = np.hstack([inter_layer_link_gts, cross_layer_link_gts])
     return link_gt
 
+def encode_seglink_gt(seg_gt):
+    anchors = config.default_anchors
+    anchor_cx, anchor_cy, anchor_w, anchor_h = (anchors[:, idx] for idx in range(4))
+    seg_cx, seg_cy, seg_w, seg_h = (seg_gt[:, idx] for idx in range(4))
+    
+    offset_cx = (seg_cx - anchor_cx) * 1.0 / anchor_w
+    offset_cy = (seg_cy - anchor_cy) * 1.0 / anchor_h
+    ln_seg_w = np.log(seg_w * 1.0 / anchor_w)
+    ln_seg_h = np.log(seg_h * 1.0 / anchor_h)
+    
+    seg_gt[:, 0] = offset_cx / config.prior_scaling[0]
+    seg_gt[:, 1] = offset_cy / config.prior_scaling[1]
+    seg_gt[:, 2] = ln_seg_w / config.prior_scaling[2]
+    seg_gt[:, 3] = ln_seg_h / config.prior_scaling[3]
+    seg_gt[:, 4] = seg_gt[:, 4]  / config.prior_scaling[4]
+    return seg_gt
 
 def get_all_seglink_gt(xs, ys, normalize = False, bbox_idx_in_label = False):
     anchors = config.default_anchors
     labels, seg_gt = match_anchor_to_text_boxes(anchors, xs, ys);
     link_gt = cal_link_gt(labels);
     if normalize:    
-        # normalize the segment ground truth between 1 and 0.
-        h_I, w_I = config.image_shape
-        seg_gt = np.asarray(seg_gt, dtype = np.float32) / [w_I, h_I, w_I, h_I, 1.0]
+        seg_gt = encode_seglink_gt(seg_gt)
     
     if not bbox_idx_in_label:
         labels = np.asarray(labels >=0, dtype = np.int32);
     else:
         labels = np.asarray(labels, dtype = np.int32);
-        
+    
     seg_gt = np.asarray(seg_gt, dtype = np.float32)
     link_gt = np.asarray(link_gt, dtype = np.int32)
     return labels, seg_gt, link_gt

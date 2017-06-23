@@ -22,7 +22,9 @@ anchor_scale_gamma = 1.5
 feat_layers = ['conv4_3','fc7', 'conv6_2', 'conv7_2', 'conv8_2', 'conv9_2']
 # feat_norms = [20] + [-1] * len(feat_layers)
 max_height_ratio = 1.5
-
+# prior_scaling = [0.1, 0.2, 0.1, 0.2, 20.0]
+prior_scaling = [0.2, 0.5, 0.2, 0.5, 20.0]
+# prior_scaling = [1.0] * 5
 
 seg_confidence_threshold = 0.5
 link_confidence_threshold = 0.5

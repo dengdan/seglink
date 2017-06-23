@@ -199,11 +199,30 @@ class SegLinkNet(object):
                 diff = pred - target
                 abs_diff = tf.abs(diff)
                 abs_diff_lt_1 = tf.less(abs_diff, 1)
-                loss = tf.reduce_sum(tf.where(abs_diff_lt_1, 0.5 * tf.square(abs_diff), abs_diff - 0.5), axis = 2)
-                return tf.reduce_sum(loss * tf.cast(weights, tf.float32))
+                if len(target.shape) != len(weights.shape):
+                    loss = tf.reduce_sum(tf.where(abs_diff_lt_1, 0.5 * tf.square(abs_diff), abs_diff - 0.5), axis = 2)
+                    return tf.reduce_sum(loss * tf.cast(weights, tf.float32))
+                else:
+                    loss = tf.where(abs_diff_lt_1, 0.5 * tf.square(abs_diff), abs_diff - 0.5)
+                    return tf.reduce_sum(loss * tf.cast(weights, tf.float32))
 
         with tf.name_scope('seg_loc_loss'):            
-            seg_loc_loss = smooth_l1_loss(self.seg_offsets, seg_loc, seg_pos_mask) * seg_loc_loss_weight
+            def has_pos():
+                seg_loc_loss = smooth_l1_loss(self.seg_offsets, seg_loc, seg_pos_mask) * seg_loc_loss_weight / n_seg_pos
+                names= ['loc_cx_loss', 'loc_cy_loss', 'loc_w_loss', 'loc_h_loss', 'loc_theta_loss']
+                sub_loc_losses = []
+                from tensorflow.python.ops import control_flow_ops
+                for idx, name in enumerate(names):
+                    name_loss = smooth_l1_loss(self.seg_offsets[:, :, idx], seg_loc[:,:, idx], seg_pos_mask) * seg_loc_loss_weight / n_seg_pos 
+                    name_loss = tf.identity(name_loss, name = name)
+                    if do_summary:
+                        tf.summary.scalar(name, name_loss)
+                    sub_loc_losses.append(name_loss)
+                seg_loc_loss = control_flow_ops.with_dependencies(sub_loc_losses, seg_loc_loss)
+                return seg_loc_loss
+            def no_pos():
+                return tf.constant(.0);
+            seg_loc_loss = tf.cond(n_seg_pos > 0, has_pos, no_pos)
             tf.add_to_collection(tf.GraphKeys.LOSSES, seg_loc_loss)
 
         
