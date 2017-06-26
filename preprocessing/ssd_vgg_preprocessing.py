@@ -216,7 +216,7 @@ def distorted_bounding_box_crop(image,
                 aspect_ratio_range=aspect_ratio_range,
                 area_range=area_range,
                 max_attempts=max_attempts,
-                use_image_if_no_bounding_boxes=False)
+                use_image_if_no_bounding_boxes=True)
         distort_bbox = distort_bbox[0, 0]
 
         # Crop the image to the specified bounding box.

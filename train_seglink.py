@@ -20,8 +20,8 @@ import config
 tf.app.flags.DEFINE_string('train_dir', None, 'the path to store checkpoints and eventfiles for summaries')
 tf.app.flags.DEFINE_string('checkpoint_path', None, 
    'the path of pretrained model to be used. If there are checkpoints in train_dir, this config will be ignored.')
-tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.5, 'the gpu memory fraction to be used. If less than 0, allow_growth = True is used.')
-tf.app.flags.DEFINE_integer('batch_size', 2, 'The number of samples in each batch.')
+tf.app.flags.DEFINE_float('gpu_memory_fraction', -1, 'the gpu memory fraction to be used. If less than 0, allow_growth = True is used.')
+tf.app.flags.DEFINE_integer('batch_size', None, 'The number of samples in each batch.')
 tf.app.flags.DEFINE_integer('num_gpus', 1, 'The number of gpus can be used.')
 tf.app.flags.DEFINE_integer('max_number_of_steps', 1000000, 'The maximum number of training steps.')
 tf.app.flags.DEFINE_integer('log_every_n_steps', 1, 'log frequency')
@@ -40,7 +40,7 @@ tf.app.flags.DEFINE_float('weight_decay', 0.0005, 'The weight decay on the model
 # I/O and preprocessing Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_integer(
-    'num_readers', 12,
+    'num_readers', 4,
     'The number of parallel readers that read data from the dataset.')
 tf.app.flags.DEFINE_integer(
     'num_preprocessing_threads', 4,
@@ -64,14 +64,15 @@ tf.app.flags.DEFINE_integer('train_image_height', 512, 'Train image size')
 FLAGS = tf.app.flags.FLAGS
 
 def config_initialization():
-    if not FLAGS.dataset_dir:
-        raise ValueError('You must supply the dataset directory with --dataset_dir')
-    tf.logging.set_verbosity(tf.logging.DEBUG)
-    
     # image shape and feature layers shape inference
     image_shape = (FLAGS.train_image_height, FLAGS.train_image_width)
     
-
+    if not FLAGS.dataset_dir:
+        raise ValueError('You must supply the dataset directory with --dataset_dir')
+    tf.logging.set_verbosity(tf.logging.DEBUG)
+    util.init_logger(log_file = 'log_train_seglink_%d_%d.log'%image_shape, log_path = FLAGS.train_dir, stdout = False, mode = 'a')
+    
+    
     config.init_config(image_shape, batch_size = FLAGS.batch_size, weight_decay = FLAGS.weight_decay, num_gpus = FLAGS.num_gpus)
 
     batch_size = config.batch_size

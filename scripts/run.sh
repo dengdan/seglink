@@ -23,6 +23,8 @@ python train_seglink.py \
 			--train_dir=${HOME}/temp/no-use/seglink_debug \
 			--num_gpus=${num_gpus} \
 			--learning_rate=0.001 \
+			--train_image_width=384 \
+			--train_image_height=384 \
 			--gpu_memory_fraction=-1 \
 			--batch_size=${BATCH_SIZE}\
 			--checkpoint_path=${HOME}/models/ssd-pretrain/seglink
