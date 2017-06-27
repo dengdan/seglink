@@ -50,11 +50,11 @@ tf.app.flags.DEFINE_integer(
 # Dataset Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_string(
-    'dataset_name', 'synthtext', 'The name of the dataset to load.')
+    'dataset_name', None, 'The name of the dataset to load.')
 tf.app.flags.DEFINE_string(
     'dataset_split_name', 'train', 'The name of the train/test split.')
 tf.app.flags.DEFINE_string(
-    'dataset_dir', util.io.get_absolute_path('~/dataset/SSD-tf/SynthText'), 'The directory where the dataset files are stored.')
+    'dataset_dir', None, 'The directory where the dataset files are stored.')
 tf.app.flags.DEFINE_string(
     'model_name', 'seglink_vgg', 'The name of the architecture to train.')
 tf.app.flags.DEFINE_integer('train_image_width', 512, 'Train image size')
@@ -97,7 +97,8 @@ def create_dataset_batch_queue(dataset):
                 common_queue_min=30 * config.batch_size,
                 shuffle=True)
         # Get for SSD network: image, labels, bboxes.
-        [image, shape, glabels, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get(['image', 'shape',
+        [image, glabels, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
+                                                         'image',
                                                          'object/label',
                                                          'object/bbox', 
                                                          'object/oriented_bbox/x1',
@@ -229,7 +230,10 @@ def train(train_op):
 
 
 def main(_):
-    dataset = config_initialization()
+    # The choice of return dataset object via initialization method maybe confusing, 
+    # but I need to print all configurations in this method, including dataset information. 
+    dataset = config_initialization()   
+    
     batch_queue = create_dataset_batch_queue(dataset)
     train_op = create_clones(batch_queue)
     train(train_op)

@@ -92,7 +92,7 @@ def init_config(image_shape, batch_size = 1, weight_decay = 0.0005, num_gpus = 1
     if batch_size_per_gpu < 1:
         raise ValueError('Invalid batch_size [=%d], resulting in 0 images per gpu.'%(batch_size))
     
-def print_config(flags, dataset, save_dir = None):
+def print_config(flags, dataset, save_dir = None, print_to_file = True):
     def do_print(stream=None):
         print('\n# =========================================================================== #', file=stream)
         print('# Training flags:', file=stream)
@@ -115,12 +115,14 @@ def print_config(flags, dataset, save_dir = None):
         pprint(sorted(data_files), stream=stream)
         print('', file=stream)
     do_print(None)
-    # Save to a text file as well.
-    if save_dir is None:
-        save_dir = flags.train_dir
-        
-    util.io.mkdir(save_dir)
-    path = util.io.join_path(save_dir, 'training_config.txt')
-    with open(path, "a") as out:
-        do_print(out)
-
+    
+    if print_to_file:
+        # Save to a text file as well.
+        if save_dir is None:
+            save_dir = flags.train_dir
+            
+        util.io.mkdir(save_dir)
+        path = util.io.join_path(save_dir, 'training_config.txt')
+        with open(path, "a") as out:
+            do_print(out)
+    

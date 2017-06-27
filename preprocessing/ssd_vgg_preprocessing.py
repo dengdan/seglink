@@ -225,8 +225,7 @@ def distorted_bounding_box_crop(image,
         cropped_image.set_shape([None, None, 3])
 
         # Update bounding boxes: resize and filter out.
-        bboxes = tfe.bboxes_resize(distort_bbox, bboxes)
-        xs, ys = tfe.oriented_bboxes_resize(distort_bbox, xs, ys)
+        bboxes, xs, ys = tfe.bboxes_resize(distort_bbox, bboxes, xs, ys)
         labels, bboxes, xs, ys = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
                                                 threshold=BBOX_CROP_OVERLAP, assign_negative = False)
         return cropped_image, labels, bboxes, xs, ys, distort_bbox
@@ -363,7 +362,7 @@ def preprocess_for_eval(image, labels, bboxes, xs, ys,
         # Image data format.
         if data_format == 'NCHW':
             image = tf.transpose(image, perm=(2, 0, 1))
-        return image, labels, bboxes, bbox_img, xs, ys
+        return image, labels, bboxes, xs, ys
 
 
 def preprocess_image(image,

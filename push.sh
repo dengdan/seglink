@@ -1,4 +1,4 @@
 git add . --all
-git commit -m "training is OK"
+git commit -m "evaluation/test"
 git push -u origin master
 

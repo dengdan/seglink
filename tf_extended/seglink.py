@@ -27,7 +27,7 @@ def is_anchor_center_in_rect(anchor, xs, ys, bbox_idx):
     
 def min_area_rect(xs, ys):
     """
-    Params:
+    Args:
         xs: numpy ndarray with shape=(N,4). N is the number of oriented bboxes. 4 contains [x1, x2, x3, x4]
         ys: numpy ndarray with shape=(N,4), [y1, y2, y3, y4]
             Note that [(x1, y1), (x2, y2), (x3, y3), (x4, y4)] can represent an oriented bbox.
@@ -72,7 +72,7 @@ def transform_cv_rect(rects):
              (see the method rotate_oriented_bbox_to_horizontal for rotation detail)
             
     
-    Params:
+    Args:
         rects: ndarray with shape = (5, ) or (N, 5).
     Return:
         transformed rects.
@@ -102,7 +102,7 @@ def rotate_oriented_bbox_to_horizontal(center, bbox):
     Step 2 of Figure 5 in seglink paper
     
     Rotate bbox horizontally along a `center` point
-    Params:
+    Args:
         center: the center of rotation
         bbox: [cx, cy, w, h, theta]
     """
@@ -121,7 +121,7 @@ def rotate_oriented_bbox_to_horizontal(center, bbox):
 def crop_horizontal_bbox_using_anchor(bbox, anchor):
     """Step 3 in Figure 5 in seglink paper
     The crop operation is operated only on the x direction.
-    Params:
+    Args:
         bbox: a horizontal bbox with shape = (5, ) or (4, ). 
     """
     assert np.shape(anchor) == (4, ), "anchor must be a vector of length 4"
@@ -152,7 +152,7 @@ def rotate_horizontal_bbox_to_oriented(center, bbox):
     """
     Step 4 of Figure 5 in seglink paper: 
         Rotate the cropped horizontal bbox back to its original direction
-    Params:
+    Args:
         center: the center of rotation
         bbox: [cx, cy, w, h, theta]
     Return: the oriented bbox
@@ -253,7 +253,6 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
 ############################################################################################################
 #                       link_gt calculation                                                                #
 ############################################################################################################
-
 def reshape_link_gt_by_layer(link_gt):
     inter_layer_link_gts = {}
     cross_layer_link_gts = {}
@@ -376,7 +375,7 @@ def cal_link_gt(labels):
 
 def encode_seg_gt(seg_loc):
     """
-    Params:
+    Args:
         seg_loc: a ndarray with shape = (N, 5). It contains the abolute values of segment locations 
     Return:
         seg_gt, i.e., the offsets from default boxes. It is used as the final segment location ground truth.
@@ -554,13 +553,34 @@ def group_segs(seg_scores, link_scores):
 ############################################################################################################
 #                       combining segments to bboxes                                                       #
 ############################################################################################################
-def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred):
+def tf_seglink_tobbox(seg_cls_pred, link_cls_pred, seg_offsets_pred):
+    seg_scores = seg_cls_pred[:, 1]
+    link_scores = link_cls_pred[:, 1]
+    return tf.py_func(seglink_to_bbox, [seg_scores, link_scores, seg_offsets_pred], tf.float32)
+    
+    
+def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred, image_shape = None):
+    """
+    Args:
+        seg_scores: the scores of segments being positive
+        link_scores: the scores of linkage being positive
+        seg_offsets_pred
+    Return:
+        bboxes, with shape = (N, 5), and N is the number of predicted bboxes
+    """
+    
     seg_groups = group_segs(seg_scores, link_scores);
     seg_locs = decode_seg_offsets_pred(seg_offsets_pred)
     bboxes = []
     for group in seg_groups:
         group = [seg_locs[idx, :] for idx in group]
         bbox = combine_segs(group)
+        
+        if image_shape is not None:
+            ref_h, ref_w = config.image_shape
+            image_h, image_w = image_shape[0:2]
+            scale = [image_h * 1.0 / ref_h, image_w * 1.0 / ref_w, image_h * 1.0 / ref_h, image_w * 1.0 / ref_w, 1]
+            bbox = np.asarray(bbox) * scale
         bboxes.append(bbox)
     return np.asarray(bboxes)
 
@@ -630,3 +650,12 @@ def combine_segs(segs, return_bias = False):
     else:
         return bcx, bcy, bw, bh, bar_theta
             
+def bboxes_to_xys(bboxes):
+    xys = np.zeros((len(bboxes), 8))
+    for bbox_idx, bbox in enumerate(bboxes):
+        bbox = ((bbox[0], bbox[1]), (bbox[2], bbox[3]), bbox[4])
+        box = cv2.cv.BoxPoints(bbox)
+        box = np.int0(box)
+        box = np.reshape(box, -1)
+        xys[bbox_idx, :] = box
+    return xys

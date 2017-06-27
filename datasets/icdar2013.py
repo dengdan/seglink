@@ -38,30 +38,42 @@ def get_split(split_name, dataset_dir, file_pattern=FILE_PATTERN, reader=None):
     # Allowing None in the signature so that dataset_factory can use the default.
     if reader is None:
         reader = tf.TFRecordReader
-    # Features in Pascal VOC TFRecords.
     keys_to_features = {
         'image/encoded': tf.FixedLenFeature((), tf.string, default_value=''),
         'image/format': tf.FixedLenFeature((), tf.string, default_value='jpeg'),
-        'image/height': tf.FixedLenFeature([1], tf.int64),
-        'image/width': tf.FixedLenFeature([1], tf.int64),
-        'image/channels': tf.FixedLenFeature([1], tf.int64),
+        'image/filename': tf.FixedLenFeature((), tf.string, default_value=''),
         'image/shape': tf.FixedLenFeature([3], tf.int64),
         'image/object/bbox/xmin': tf.VarLenFeature(dtype=tf.float32),
         'image/object/bbox/ymin': tf.VarLenFeature(dtype=tf.float32),
         'image/object/bbox/xmax': tf.VarLenFeature(dtype=tf.float32),
         'image/object/bbox/ymax': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/x1': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/x2': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/x3': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/x4': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/y1': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/y2': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/y3': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/y4': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/ignored': tf.VarLenFeature(dtype=tf.int64),
         'image/object/bbox/label': tf.VarLenFeature(dtype=tf.int64),
-        'image/object/bbox/difficult': tf.VarLenFeature(dtype=tf.int64),
-        'image/object/bbox/truncated': tf.VarLenFeature(dtype=tf.int64),
     }
     items_to_handlers = {
         'image': slim.tfexample_decoder.Image('image/encoded', 'image/format'),
         'shape': slim.tfexample_decoder.Tensor('image/shape'),
+        'filename': slim.tfexample_decoder.Tensor('image/filename'),
         'object/bbox': slim.tfexample_decoder.BoundingBox(
                 ['ymin', 'xmin', 'ymax', 'xmax'], 'image/object/bbox/'),
+        'object/oriented_bbox/x1': slim.tfexample_decoder.Tensor('image/object/bbox/x1'),
+        'object/oriented_bbox/x2': slim.tfexample_decoder.Tensor('image/object/bbox/x2'),
+        'object/oriented_bbox/x3': slim.tfexample_decoder.Tensor('image/object/bbox/x3'),
+        'object/oriented_bbox/x4': slim.tfexample_decoder.Tensor('image/object/bbox/x4'),
+        'object/oriented_bbox/y1': slim.tfexample_decoder.Tensor('image/object/bbox/y1'),
+        'object/oriented_bbox/y2': slim.tfexample_decoder.Tensor('image/object/bbox/y2'),
+        'object/oriented_bbox/y3': slim.tfexample_decoder.Tensor('image/object/bbox/y3'),
+        'object/oriented_bbox/y4': slim.tfexample_decoder.Tensor('image/object/bbox/y4'),
         'object/label': slim.tfexample_decoder.Tensor('image/object/bbox/label'),
-        'object/difficult': slim.tfexample_decoder.Tensor('image/object/bbox/difficult'),
-        'object/truncated': slim.tfexample_decoder.Tensor('image/object/bbox/truncated'),
+        'object/ignored': slim.tfexample_decoder.Tensor('image/object/bbox/ignored')
     }
     decoder = slim.tfexample_decoder.TFExampleDecoder(
         keys_to_features, items_to_handlers)
