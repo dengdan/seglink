@@ -1,10 +1,14 @@
+import tensorflow as tf
+from tensorflow.python.ops import variables
+from tensorflow.python.ops import array_ops
 from tensorflow.python.framework import ops
 from tensorflow.python.ops import state_ops
+from tensorflow.python.ops import variable_scope
 from tf_extended import math as tfe_math
-
+import util
 
 def _create_local(name, shape, collections=None, validate_shape=True,
-                  dtype=dtypes.float32):
+                  dtype=tf.float32):
     """Creates a new local variable.
     Args:
         name: The name of the new or existing variable.
@@ -41,9 +45,10 @@ def streaming_tp_fp_arrays(num_gbboxes, tp, fp,
         fp = tf.reshape(fp, [-1])
 
         # Local variables accumlating information over batches.
-        v_num_objects = _create_local('v_num_gbboxes', shape=[], dtype=tf.int64)
-        v_tp = _create_local('v_tp', shape=[0, ], dtype=stype)
-        v_fp = _create_local('v_fp', shape=[0, ], dtype=stype)
+        v_num_objects = _create_local('v_num_gbboxes', shape=[], dtype=tf.int32)
+        v_tp = _create_local('v_tp', shape=[0, ], dtype=tf.bool)
+        v_fp = _create_local('v_fp', shape=[0, ], dtype=tf.bool)
+        
 
         # Update operations.
         num_objects_op = state_ops.assign_add(v_num_objects,
@@ -54,9 +59,9 @@ def streaming_tp_fp_arrays(num_gbboxes, tp, fp,
                                  validate_shape=False)
 
         # Value and update ops.
-        val = (v_num_objects, v_ndetections, v_tp, v_fp, v_scores)
-        with ops.control_dependencies([num_objects_op, scores_op, tp_op, fp_op]):
-            update_op = (num_objects_op, tp_op, fp_op, scores_op)
+        val = (v_num_objects, v_tp, v_fp)
+        with ops.control_dependencies([num_objects_op, tp_op, fp_op]):
+            update_op = (num_objects_op, tp_op, fp_op)
 
         return val, update_op
 
@@ -67,13 +72,12 @@ def precision_recall(num_gbboxes, tp, fp, scope=None):
     """
 
     # Sort by score.
-    with tf.name_scope(scope, 'precision_recall',
-                       [num_gbboxes, num_detections, tp, fp]):
+    with tf.name_scope(scope, 'precision_recall'):
         # Computer recall and precision.
         tp = tf.reduce_sum(tf.cast(tp, tf.float32), axis=0)
         fp = tf.reduce_sum(tf.cast(fp, tf.float32), axis=0)
-        recall = tfe_math._safe_div(tp, tf.cast(num_gbboxes, tf.float32), 'recall')
-        precision = tfe_math._safe_div(tp, tp + fp, 'precision')
+        recall = tfe_math.safe_divide(tp, tf.cast(num_gbboxes, tf.float32), 'recall')
+        precision = tfe_math.safe_divide(tp, tp + fp, 'precision')
         return tf.tuple([precision, recall])
     
 def fmean(pre, rec):

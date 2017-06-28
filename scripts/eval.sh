@@ -28,8 +28,8 @@ python eval_seglink.py \
             --dataset_dir=${DATASET_DIR} \
             --dataset_name=${DATASET} \
             --dataset_split_name=$SPLIT \
-			--eval_image_width=512 \
-			--eval_image_height=512 \
+			--eval_image_width=384 \
+			--eval_image_height=384 \
 			--gpu_memory_fraction=-1
 
 			

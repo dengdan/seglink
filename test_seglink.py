@@ -21,7 +21,6 @@ import config
 tf.app.flags.DEFINE_string('checkpoint_path', None, 
    'the path of checkpoint to be evaluated. If it is a directory containing many checkpoints, the lastest will be evaluated.')
 tf.app.flags.DEFINE_float('gpu_memory_fraction', -1, 'the gpu memory fraction to be used. If less than 0, allow_growth = True is used.')
-tf.app.flags.DEFINE_integer('batch_size', 1, 'The number of samples in each batch.')
 
 # =========================================================================== #
 # I/O and preprocessing Flags.
@@ -58,7 +57,7 @@ def config_initialization():
         raise ValueError('You must supply the dataset directory with --dataset_dir')
     tf.logging.set_verbosity(tf.logging.DEBUG)
     
-    config.init_config(image_shape, batch_size = FLAGS.batch_size)
+    config.init_config(image_shape, batch_size = 1)
 
     batch_size = config.batch_size
     
@@ -75,7 +74,7 @@ def create_dataset_batch_queue(dataset):
                 num_readers=FLAGS.num_readers,
                 common_queue_capacity=50 * config.batch_size,
                 common_queue_min=30 * config.batch_size,
-                shuffle=True)
+                shuffle=False)
             
         [image, shape, filename, glabels, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
                                                          'image', 'shape', 'filename',
@@ -153,7 +152,7 @@ def eval(dataset):
                 tf.summary.scalar(name, metric[0])
                 
             # decode seglink to bbox output
-            bboxes_pred = seglink.tf_seglink_to_bbox_in_batch(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
+            bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
 
             
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
@@ -167,52 +166,53 @@ def eval(dataset):
         sess_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction;
     
     checkpoint_dir = util.io.get_dir(FLAGS.checkpoint_path)
-    logdir = util.io.join_path(FLAGS.checkpoint_path, 'eval', FLAGS.dataset_name, FLAGS.dataset_split_name)
+    logdir = util.io.join_path(FLAGS.checkpoint_path, 'eval', FLAGS.dataset_name + '_' +FLAGS.dataset_split_name)
     
     
     saver = tf.train.Saver()
     if util.io.is_dir(FLAGS.checkpoint_path):
-        for checkpoint in evaluation.checkpoints_iterator(checkpoint_dir):
-            tf.logging.info('evaluating', checkpoint)
-
-            with tf.Session(config = sess_config) as sess:
-                tf.train.start_queue_runners(sess)
-                saver.restore(sess, checkpoint)
-                checkpoint_name = util.io.get_filename(str(checkpoint));
-                dump_path = util.io.join_path(logdir, 'eval', checkpoint_name, FLAGS.dataset_split_name)
-                xml_path = util.io.join_path(dump_path, 'xml')
-                txt_path = util.io.join_path(dump_path,'txt')
-                zip_path = util.io.join_path(dump_path, checkpoint_name +'.zip')
-                vis_path = util.io.join_path(dump_path, 'vis')
-                
-                # write detection result as txt files
-                def write_result_as_txt(image_name, bboxes, path):
-                  filename = util.io.join_path(path, 'res_%s.txt'%(image_name))
-                  lines = []
-                  for b_idx, bbox in enumerate(bboxes):
-                        line = "%d, %d, %d, %d, %d, %d, %d, %d\n"%tuple(int(v) for v in bbox)
-                        lines.append(line)
-                  util.io.write_lines(filename, lines)
-                  print 'result has been written to:', filename
-                  
-                for iter in xrange(num_batches):
-                    print '%d/%d'%(iter + 1, num_batches)
-                    filenames, bboxes_pred_val = sess.run([b_filename, bboxes_pred])
-                    for image_idx, image_name in enumerate(filenames):
-                        image_bboxes = bboxes_pred_val[image_idx]
-                        image_data = image_data_batch[image_idx, ...]
-                        xys = seglink.bboxes_to_xys(image_bboxes)
-                        write_result_as_txt(image_name, xys, txt_path)
-                        
-                # create zip file for icdar2015
-                cmd = 'cd %s;zip -j %s %s/*'%(dump_path, zip_path, txt_path);
-                print cmd
-                print util.cmd.cmd(cmd);
-                print "zip file created: ", util.io.join_path(dump_path, zip_path)
-                
-                # 
-                
+        checkpoint = util.tf.get_latest_ckpt(FLAGS.checkpoint_path)
+    else:
+        checkpoint = FLAGS.checkpoint_path
         
+    tf.logging.info('evaluating', checkpoint)
+
+    with tf.Session(config = sess_config) as sess:
+        coord = tf.train.Coordinator()
+        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+        saver.restore(sess, checkpoint)
+        checkpoint_name = util.io.get_filename(str(checkpoint));
+        dump_path = util.io.join_path(logdir, checkpoint_name)
+        xml_path = util.io.join_path(dump_path, 'xml')
+        txt_path = util.io.join_path(dump_path,'txt')
+        zip_path = util.io.join_path(dump_path, checkpoint_name +'.zip')
+        vis_path = util.io.join_path(dump_path, 'vis')
+        
+        # write detection result as txt files
+        def write_result_as_txt(image_name, bboxes, path):
+          filename = util.io.join_path(path, 'res_%s.txt'%(image_name))
+          lines = []
+          for b_idx, bbox in enumerate(bboxes):
+                values = [int(v) for v in bbox]
+                line = "%d, %d, %d, %d, %d, %d, %d, %d\n"%tuple(values)
+                lines.append(line)
+          util.io.write_lines(filename, lines)
+          print 'result has been written to:', filename
+          
+        for iter in xrange(num_batches):
+            image_name, image_bboxes = sess.run([b_filename[0], bboxes_pred])
+            print '%d/%d: %s'%(iter + 1, num_batches, image_name)
+            write_result_as_txt(image_name, image_bboxes, txt_path)
+                
+        # create zip file for icdar2015
+        cmd = 'cd %s;zip -j %s %s/*'%(dump_path, zip_path, txt_path);
+        print cmd
+        print util.cmd.cmd(cmd);
+        print "zip file created: ", util.io.join_path(dump_path, zip_path)
+
+        coord.request_stop()
+        coord.join(threads)
+
 def main(_):
     eval(config_initialization())
     

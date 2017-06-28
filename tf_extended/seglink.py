@@ -553,23 +553,22 @@ def group_segs(seg_scores, link_scores):
 ############################################################################################################
 #                       combining segments to bboxes                                                       #
 ############################################################################################################
-def tf_seglink_to_bbox_in_batch(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shapes):
-    seg_scores = seg_cls_pred[:, :, 1]
-    link_scores = link_cls_pred[:, :, 1]
-    r = tf.map_fn(lambda x: 
-              tf_seglink_to_bbox(x[0], x[1], x[2], x[3], matching_threshold),
-              (seg_scores, link_scores, seg_offsets_pred, image_shapes),
-              dtype=(tf.int64, tf.bool, tf.bool),
-              back_prop=False,
-              swap_memory=True,
-              infer_shape=True)
-    return r
-
-
 def tf_seglink_to_bbox(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shape):
+    if len(seg_cls_pred.shape) == 3:
+        assert seg_cls_pred.shape[0] == 1 # only batch_size == 1 supported now TODO
+        seg_cls_pred = seg_cls_pred[0, ...]
+        link_cls_pred = link_cls_pred[0, ...]
+        seg_offsets_pred = seg_offsets_pred[0, ...]
+        image_shape = image_shape[0, :]
+    
+    assert seg_cls_pred.shape[-1] == 2
+    assert link_cls_pred.shape[-1] == 2
+    assert seg_offsets_pred.shape[-1] == 5
+    
     seg_scores = seg_cls_pred[:, 1]
     link_scores = link_cls_pred[:, 1]
-    return tf.py_func(seglink_to_bbox, [seg_scores, link_scores, seg_offsets_pred], tf.float32)
+    image_bboxes = tf.py_func(seglink_to_bbox, [seg_scores, link_scores, seg_offsets_pred, image_shape], tf.float32);
+    return image_bboxes
     
     
 def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred, image_shape = None):
@@ -585,17 +584,21 @@ def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred, image_shape = Non
     seg_groups = group_segs(seg_scores, link_scores);
     seg_locs = decode_seg_offsets_pred(seg_offsets_pred)
     bboxes = []
+    if image_shape is None:
+        image_shape = config.image_shape
+        
     for group in seg_groups:
         group = [seg_locs[idx, :] for idx in group]
         bbox = combine_segs(group)
         
-        if image_shape is not None:
-            ref_h, ref_w = config.image_shape
-            image_h, image_w = image_shape[0:2]
-            scale = [image_h * 1.0 / ref_h, image_w * 1.0 / ref_w, image_h * 1.0 / ref_h, image_w * 1.0 / ref_w, 1]
-            bbox = np.asarray(bbox) * scale
+        ref_h, ref_w = config.image_shape
+        image_h, image_w = image_shape[0:2]
+        scale = [image_w * 1.0 / ref_w, image_h * 1.0 / ref_h, image_h * 1.0 / ref_h, image_w * 1.0 / ref_w, 1]
+        bbox = np.asarray(bbox) * scale
         bboxes.append(bbox)
-    return np.asarray(bboxes)
+        
+    bboxes = bboxes_to_xys(bboxes, image_shape)
+    return np.asarray(bboxes, dtype = np.float32)
 
 def sin(theta):
     return np.sin(theta / 180.0 * np.pi)
@@ -663,12 +666,39 @@ def combine_segs(segs, return_bias = False):
     else:
         return bcx, bcy, bw, bh, bar_theta
             
-def bboxes_to_xys(bboxes):
+def bboxes_to_xys(bboxes, image_shape):
+    """Convert Seglink bboxes to xys, i.e., eight points
+    The `image_shape` is used to to make sure all points return are valid, i.e., within image area
+    """
+    if len(bboxes) == 0:
+        return []
+    
+    assert np.ndim(bboxes) == 2 and np.shape(bboxes)[-1] == 5, 'invalid `bboxes` param with shape =  ' + str(np.shape(bboxes))
+    
+    h, w = image_shape[0:2]
+    def get_valid_x(x):
+        if x < 0:
+            return 0
+        if x >= w:
+            return w - 1
+        return x
+    
+    def get_valid_y(y):
+        if y < 0:
+            return 0
+        if y >= h:
+            return h - 1
+        return y
+    
     xys = np.zeros((len(bboxes), 8))
     for bbox_idx, bbox in enumerate(bboxes):
         bbox = ((bbox[0], bbox[1]), (bbox[2], bbox[3]), bbox[4])
-        box = cv2.cv.BoxPoints(bbox)
-        box = np.int0(box)
-        box = np.reshape(box, -1)
-        xys[bbox_idx, :] = box
+        points = cv2.cv.BoxPoints(bbox)
+        points = np.int0(points)
+        for i_xy, (x, y) in enumerate(points):
+            x = get_valid_x(x)
+            y = get_valid_y(y)
+            points[i_xy, :] = [x, y]
+        points = np.reshape(points, -1)
+        xys[bbox_idx, :] = points
     return xys

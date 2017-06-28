@@ -67,7 +67,7 @@ def config_initialization():
     config.print_config(FLAGS, dataset, print_to_file = False)
     return dataset
 
-def create_dataset_batch_queue(dataset):
+def read_dataset(dataset):
     with tf.device('/cpu:0'):
         with tf.name_scope(FLAGS.dataset_name + '_data_provider'):
             provider = slim.dataset_data_provider.DatasetDataProvider(
@@ -97,6 +97,7 @@ def create_dataset_batch_queue(dataset):
         
         # Pre-processing image, labels and bboxes.
         image, glabels, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
+           
                                                            out_shape = config.image_shape,
                                                            data_format = config.data_format, 
                                                            is_training = False)
@@ -105,27 +106,19 @@ def create_dataset_batch_queue(dataset):
         # calculate ground truth
         seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
         
-        # batch them
-        b_image, b_seg_label, b_seg_loc, b_link_gt, b_filename, b_shape, b_ignored, b_gxs, b_gys = tf.train.batch(
-            [image, seg_label, seg_loc, link_gt, filename, shape, gignored, gxs, gys],
-            batch_size = config.batch_size_per_gpu,
-            num_threads=FLAGS.num_preprocessing_threads,
-            capacity = 50)
-            
-        batch_queue = slim.prefetch_queue.prefetch_queue(
-            [b_image, b_seg_label, b_seg_loc, b_link_gt, b_filename, b_shape, b_ignored, b_gxs, b_gys],
-            capacity = 50) 
-    return batch_queue    
+    return image, seg_label, seg_loc, link_gt, filename, shape, gignored, gxs, gys
 
 def eval(dataset):
-    batch_queue = create_dataset_batch_queue(dataset)
+    ground_truths = list(read_dataset(dataset))
+    for idx, gt in enumerate(ground_truths):
+        ground_truths[idx] = tf.expand_dims(gt, axis = 0)
+        
     dict_metrics = {}
     
     with tf.name_scope('evaluation'):
         with tf.variable_scope(tf.get_variable_scope(), reuse = True):# the variables has been created in config.init_config
-            b_image, b_seg_label, b_seg_loc, b_link_gt, b_filename, b_shape, b_gignored, b_gxs, b_gys = batch_queue.dequeue()
+            b_image, b_seg_label, b_seg_loc, b_link_gt, b_filename, b_shape, b_gignored, b_gxs, b_gys = ground_truths
             net = seglink_symbol.SegLinkNet(inputs = b_image, data_format = config.data_format)
-            
             # build seglink loss
             net.build_loss(seg_label = b_seg_label, seg_loc = b_seg_loc, link_label = b_link_gt,
                           seg_loc_loss_weight = 1.0, link_conf_loss_weight = 1.0, do_summary = False) # the summary will be added in the following lines
@@ -144,19 +137,20 @@ def eval(dataset):
                 tf.summary.scalar(name, metric[0])
             
             # decode seglink to bbox output
-            bboxes_pred = seglink.tf_seglink_to_bbox_in_batch(net.seg_scores, net.link_scores, net.seg_offsets)
+            bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
             
             # calculate true positive and false positive
-            num_gt_bboxes, tp_mask, fp_mask = tfe_bboxes.bboxes_matching_batch(bboxes_pred, b_gxs, b_gys, b_gignored)
-            tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gbboxes, tp, fp)
+            num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching_batch(bboxes_pred, b_gxs, b_gys, b_gignored)
+            tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
             dict_metrics['tp_fp'] = (tp_fp_metric[0], tp_fp_metric[1])
             
             # precision and recall
             precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
+
             fmean = tfe_metrics.fmean(precision, recall)
             tf.summary.scalar('Precision', precision)
             tf.summary.scalar('Recall', recall)
-            tf.summary.scalar('fmean', fmean)
+            tf.summary.scalar('F-mean', fmean)
             
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
     num_batches = int(math.ceil(dataset.num_samples / float(config.batch_size)))
@@ -176,7 +170,7 @@ def eval(dataset):
             master = '',
             eval_op=list(names_to_updates.values()),
             num_evals=num_batches,
-            checkpoint_path = checkpoint,
+            checkpoint_dir = checkpoint_dir,
             logdir = logdir,
             session_config=sess_config)
     else:
@@ -184,7 +178,7 @@ def eval(dataset):
             master = '',
             eval_op=list(names_to_updates.values()),
             num_evals=num_batches,
-            checkpoint_path = checkpoint,
+            checkpoint_path = FLAGS.checkpoint_path,
             logdir = logdir,
             session_config=sess_config)
 

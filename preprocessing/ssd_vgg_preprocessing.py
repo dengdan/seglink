@@ -316,49 +316,13 @@ def preprocess_for_eval(image, labels, bboxes, xs, ys,
         image = tf.to_float(image)
         image = tf_image_whitened(image, [_R_MEAN, _G_MEAN, _B_MEAN])
 
-        # Add image rectangle to bboxes.
-        bbox_img = tf.constant([[0., 0., 1., 1.]])
-        if bboxes is None:
-            bboxes = bbox_img
-        else:
-            bboxes = tf.concat([bbox_img, bboxes], axis=0)
-
         if resize == Resize.NONE:
-            # No resizing...
             pass
-        elif resize == Resize.CENTRAL_CROP:
-            # Central cropping of the image.
-            image, bboxes = tf_image.resize_image_bboxes_with_crop_or_pad(
-                image, bboxes, out_shape[0], out_shape[1])
-        elif resize == Resize.PAD_AND_RESIZE:
-            # Resize image first: find the correct factor...
-            shape = tf.shape(image)
-            factor = tf.minimum(tf.to_double(1.0),
-                                tf.minimum(tf.to_double(out_shape[0] / shape[0]),
-                                           tf.to_double(out_shape[1] / shape[1])))
-            resize_shape = factor * tf.to_double(shape[0:2])
-            resize_shape = tf.cast(tf.floor(resize_shape), tf.int32)
-
-            image = tf_image.resize_image(image, resize_shape,
-                                          method=tf.image.ResizeMethod.BILINEAR,
-                                          align_corners=False)
-            # Pad to expected size.
-            image, bboxes = tf_image.resize_image_bboxes_with_crop_or_pad(
-                image, bboxes, out_shape[0], out_shape[1])
-        elif resize == Resize.WARP_RESIZE:
-            # Warp resize of the image.
+        else:
             image = tf_image.resize_image(image, out_shape,
                                           method=tf.image.ResizeMethod.BILINEAR,
                                           align_corners=False)
 
-        # Split back bounding boxes.
-        bbox_img = bboxes[0]
-        bboxes = bboxes[1:]
-        # Remove difficult boxes.
-        if difficults is not None:
-            mask = tf.logical_not(tf.cast(difficults, tf.bool))
-            labels = tf.boolean_mask(labels, mask)
-            bboxes = tf.boolean_mask(bboxes, mask)
         # Image data format.
         if data_format == 'NCHW':
             image = tf.transpose(image, perm=(2, 0, 1))

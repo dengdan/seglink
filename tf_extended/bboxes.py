@@ -165,9 +165,10 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold, scope=None):
     """
     with tf.name_scope(scope, 'bboxes_matching_single',[bboxes, gxs, gys, gignored]):
         # Number of groundtruth boxes.
+        gignored = tf.cast(gignored, dtype = tf.bool)
         n_gbboxes = tf.count_nonzero(tf.logical_not(gignored))
         rsize = tf.size(gignored)
-        
+        rshape = tf.shape(gignored)
         # Grountruth matching arrays.
         gmatch = tf.zeros(tf.shape(gignored), dtype=tf.bool)
         grange = tf.range(tf.size(gignored), dtype=tf.int32)
@@ -183,11 +184,12 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold, scope=None):
 
         def m_body(i, ta_tp, ta_fp, gmatch):
             # Jaccard score with groundtruth bboxes.
-            rbbox = bboxes[i]
+            rbbox = bboxes[i, :]
             jaccard = bboxes_jaccard(rbbox, gxs, gys)
 
             # Best fit, checking it's above threshold.
-            idxmax = tf.argmax(jaccard, axis=0)
+            idxmax = tf.cast(tf.argmax(jaccard, axis=0), dtype = tf.int32)
+            
             jcdmax = jaccard[idxmax]
             match = jcdmax > matching_threshold
             existing_match = gmatch[idxmax]
@@ -195,17 +197,15 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold, scope=None):
 
             # TP: match & no previous match and FP: previous match | no match.
             # If ignored: no record, i.e FP=False and TP=False.
-            tp = tf.logical_and(not_ignored,
-                                tf.logical_and(match, tf.logical_not(existing_match)))
+            tp = tf.logical_and(not_ignored, tf.logical_and(match, tf.logical_not(existing_match)))
             ta_tp = ta_tp.write(i, tp)
-            fp = tf.logical_and(not_ignored, 
-                                tf.logical_or(existing_match, tf.logical_not(match)))
+            
+            fp = tf.logical_and(not_ignored, tf.logical_or(existing_match, tf.logical_not(match)))
             ta_fp = ta_fp.write(i, fp)
+            
             # Update grountruth match.
-            mask = tf.logical_and(tf.equal(grange, idxmax),
-                                  tf.logical_and(not_ignored, match))
+            mask = tf.logical_and(tf.equal(grange, idxmax), tf.logical_and(not_ignored, match))
             gmatch = tf.logical_or(gmatch, mask)
-
             return [i+1, ta_tp, ta_fp, gmatch]
         # Main loop definition.
         i = 0
@@ -228,7 +228,9 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold, scope=None):
         return n_gbboxes, tp_match, fp_match
 
 def bboxes_jaccard(bbox, gxs, gys):
-    return tf.py_func(np_bboxes_jaccard, [bbox, gxs, gys], tf.float32)
+    jaccard = tf.py_func(np_bboxes_jaccard, [bbox, gxs, gys], tf.float32)
+    jaccard.set_shape([None, ])
+    return jaccard
 
 def np_bboxes_jaccard(bbox, gxs, gys):
     assert np.shape(bbxo) == (8,) 
