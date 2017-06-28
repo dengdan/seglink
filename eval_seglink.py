@@ -7,7 +7,7 @@ from tensorflow.python.ops import control_flow_ops
 from tensorflow.contrib.training.python.training import evaluation
 from datasets import dataset_factory
 from preprocessing import ssd_vgg_preprocessing
-from tf_extended import seglink, metrics
+from tf_extended import seglink, metrics as tfe_metrics, bboxes as tfe_bboxes
 import util
 import cv2
 from nets import seglink_symbol, anchor_layer
@@ -123,7 +123,7 @@ def eval(dataset):
     
     with tf.name_scope('evaluation'):
         with tf.variable_scope(tf.get_variable_scope(), reuse = True):# the variables has been created in config.init_config
-            b_image, b_seg_label, b_seg_loc, b_link_gt, b_filename, b_shape, b_ignored, b_gxs, b_gys = batch_queue.dequeue()
+            b_image, b_seg_label, b_seg_loc, b_link_gt, b_filename, b_shape, b_gignored, b_gxs, b_gys = batch_queue.dequeue()
             net = seglink_symbol.SegLinkNet(inputs = b_image, data_format = config.data_format)
             
             # build seglink loss
@@ -143,6 +143,20 @@ def eval(dataset):
             for name, metric in dict_metrics.items():
                 tf.summary.scalar(name, metric[0])
             
+            # decode seglink to bbox output
+            bboxes_pred = seglink.tf_seglink_to_bbox_in_batch(net.seg_scores, net.link_scores, net.seg_offsets)
+            
+            # calculate true positive and false positive
+            num_gt_bboxes, tp_mask, fp_mask = tfe_bboxes.bboxes_matching_batch(bboxes_pred, b_gxs, b_gys, b_gignored)
+            tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gbboxes, tp, fp)
+            dict_metrics['tp_fp'] = (tp_fp_metric[0], tp_fp_metric[1])
+            
+            # precision and recall
+            precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
+            fmean = tfe_metrics.fmean(precision, recall)
+            tf.summary.scalar('Precision', precision)
+            tf.summary.scalar('Recall', recall)
+            tf.summary.scalar('fmean', fmean)
             
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
     num_batches = int(math.ceil(dataset.num_samples / float(config.batch_size)))
@@ -157,19 +171,22 @@ def eval(dataset):
     checkpoint_dir = util.io.get_dir(FLAGS.checkpoint_path)
     logdir = util.io.join_path(FLAGS.checkpoint_path, 'eval', FLAGS.dataset_name, FLAGS.dataset_split_name)
     
-    
-    saver = tf.train.Saver()
     if util.io.is_dir(FLAGS.checkpoint_path):
-        for checkpoint in evaluation.checkpoints_iterator(checkpoint_dir):
-            tf.logging.info('evaluating', checkpoint)
-            
-            slim.evaluation.evaluate_once(
-                master = '',
-                eval_op=list(names_to_updates.values()),
-                num_evals=num_batches,
-                checkpoint_path = checkpoint,
-                logdir = logdir,
-                session_config=sess_config)
+        slim.evaluation.evaluation_loop(
+            master = '',
+            eval_op=list(names_to_updates.values()),
+            num_evals=num_batches,
+            checkpoint_path = checkpoint,
+            logdir = logdir,
+            session_config=sess_config)
+    else:
+        slim.evaluation.evaluate_once(
+            master = '',
+            eval_op=list(names_to_updates.values()),
+            num_evals=num_batches,
+            checkpoint_path = checkpoint,
+            logdir = logdir,
+            session_config=sess_config)
 
                 
         

@@ -151,7 +151,10 @@ def eval(dataset):
             # Add metrics to summaries.
             for name, metric in dict_metrics.items():
                 tf.summary.scalar(name, metric[0])
-            
+                
+            # decode seglink to bbox output
+            bboxes_pred = seglink.tf_seglink_to_bbox_in_batch(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
+
             
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
     num_batches = int(math.ceil(dataset.num_samples / float(config.batch_size)))
@@ -171,14 +174,6 @@ def eval(dataset):
     if util.io.is_dir(FLAGS.checkpoint_path):
         for checkpoint in evaluation.checkpoints_iterator(checkpoint_dir):
             tf.logging.info('evaluating', checkpoint)
-            
-#             slim.evaluation.evaluate_once(
-#                 master = '',
-#                 eval_op=list(names_to_updates.values()),
-#                 num_evals=num_batches,
-#                 checkpoint_path = checkpoint,
-#                 logdir = logdir,
-#                 session_config=sess_config)
 
             with tf.Session(config = sess_config) as sess:
                 tf.train.start_queue_runners(sess)
@@ -188,7 +183,7 @@ def eval(dataset):
                 xml_path = util.io.join_path(dump_path, 'xml')
                 txt_path = util.io.join_path(dump_path,'txt')
                 zip_path = util.io.join_path(dump_path, checkpoint_name +'.zip')
-                result_path = util.io.join_path(dump_path, 'fixed_eval.xml')
+                vis_path = util.io.join_path(dump_path, 'vis')
                 
                 # write detection result as txt files
                 def write_result_as_txt(image_name, bboxes, path):
@@ -199,19 +194,16 @@ def eval(dataset):
                         lines.append(line)
                   util.io.write_lines(filename, lines)
                   print 'result has been written to:', filename
-
+                  
                 for iter in xrange(num_batches):
                     print '%d/%d'%(iter + 1, num_batches)
-                    filenames, shapes_val, seg_scores_val, seg_offsets_val, link_scores_val = \
-                        sess.run([b_filename, b_shape, net.seg_scores, net.seg_offsets, net.link_scores])
-                    for image_idx, (image_name, image_shape) in enumerate(zip(filenames, shapes_val)):
-                        image_bboxes = seglink.seglink_to_bbox(seg_scores = seg_scores_val[image_idx, :, 1], 
-                                                               seg_offsets_pred = seg_offsets_val[image_idx, :],
-                                                               link_scores = link_scores_val[image_idx, :, 1],
-                                                               image_shape = image_shape)
+                    filenames, bboxes_pred_val = sess.run([b_filename, bboxes_pred])
+                    for image_idx, image_name in enumerate(filenames):
+                        image_bboxes = bboxes_pred_val[image_idx]
+                        image_data = image_data_batch[image_idx, ...]
                         xys = seglink.bboxes_to_xys(image_bboxes)
                         write_result_as_txt(image_name, xys, txt_path)
-                
+                        
                 # create zip file for icdar2015
                 cmd = 'cd %s;zip -j %s %s/*'%(dump_path, zip_path, txt_path);
                 print cmd

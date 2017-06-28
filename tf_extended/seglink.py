@@ -553,7 +553,20 @@ def group_segs(seg_scores, link_scores):
 ############################################################################################################
 #                       combining segments to bboxes                                                       #
 ############################################################################################################
-def tf_seglink_tobbox(seg_cls_pred, link_cls_pred, seg_offsets_pred):
+def tf_seglink_to_bbox_in_batch(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shapes):
+    seg_scores = seg_cls_pred[:, :, 1]
+    link_scores = link_cls_pred[:, :, 1]
+    r = tf.map_fn(lambda x: 
+              tf_seglink_to_bbox(x[0], x[1], x[2], x[3], matching_threshold),
+              (seg_scores, link_scores, seg_offsets_pred, image_shapes),
+              dtype=(tf.int64, tf.bool, tf.bool),
+              back_prop=False,
+              swap_memory=True,
+              infer_shape=True)
+    return r
+
+
+def tf_seglink_to_bbox(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shape):
     seg_scores = seg_cls_pred[:, 1]
     link_scores = link_cls_pred[:, 1]
     return tf.py_func(seglink_to_bbox, [seg_scores, link_scores, seg_offsets_pred], tf.float32)

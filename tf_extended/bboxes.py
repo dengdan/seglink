@@ -117,34 +117,31 @@ def bboxes_intersection(bbox_ref, bboxes, name=None):
         return scores
 
 
-def bboxes_matching_batch(bboxes, gbboxes, gignored, matching_threshold=0.5, scope=None):
+def bboxes_matching_batch(bboxes, gxs, gys, gignored, matching_threshold=0.5, scope=None):
     """Matching a collection of detected boxes with groundtruth values.
     Batched-inputs version.
 
     Args:
-      rclasses, rscores, rbboxes: BxN(x4) Tensors. Detected objects, sorted by score;
-      glabels, gbboxes: Groundtruth bounding boxes. May be zero padded, hence
-        zero-class objects are ignored.
+      rbboxes: BxN(x4) Tensors. Detected objects;
+      gbboxes: Groundtruth bounding boxes
       matching_threshold: Threshold for a positive match.
     Return: Tuple or Dictionaries with:
-       n_gbboxes: Scalar Tensor with number of groundtruth boxes (may difer from
-         size because of zero padding).
+       n_gbboxes: Scalar Tensor with number of groundtruth boxes (may difer from size because of zero padding).
        tp: (B, N)-shaped boolean Tensor containing with True Positives.
        fp: (B, N)-shaped boolean Tensor containing with False Positives.
     """
     # Dictionaries as inputs.
 
-    with tf.name_scope(scope, 'bboxes_matching_batch', [bboxes, gbboxes, gignored]):
-        r = tf.map_fn(lambda x: bboxes_matching(labels, x[0], x[1],
-                                                x[2], x[3], x[4],
-                                                matching_threshold),
-                      (bboxes, gbboxes, gignored),
+    with tf.name_scope(scope, 'bboxes_matching_batch', [bboxes, gxs, gys, gignored]):
+        r = tf.map_fn(lambda x: 
+                      bboxes_matching(x[0], x[1], x[2], x[3], matching_threshold),
+                      (bboxes, gxs, gys, gignored),
                       dtype=(tf.int64, tf.bool, tf.bool),
                       parallel_iterations=10,
                       back_prop=False,
                       swap_memory=True,
                       infer_shape=True)
-        return r[0], r[1], r[2], scores
+        return r[0], r[1], r[2]
 
 
 def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold, scope=None):
@@ -231,4 +228,41 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold, scope=None):
         return n_gbboxes, tp_match, fp_match
 
 def bboxes_jaccard(bbox, gxs, gys):
+    return tf.py_func(np_bboxes_jaccard, [bbox, gxs, gys], tf.float32)
+
+def np_bboxes_jaccard(bbox, gxs, gys):
+    assert np.shape(bbxo) == (8,) 
+    bbox_points = np.reshape(bbox, (4, 2))
+    cnts = util.img.points_to_contours(bbox_points)
+    
+    # contruct a 0-1 mask to draw contours on
+    xmax = max(bbox_points[:, 0])
+    xmax = max(xmax, max(gxs)) + 10
+    ymax = max(bbox_points[:, 1])
+    ymax = max(ymax, max(gys)) + 10
+    mask = util.img.black((ymax, xmax))
+    
+    # draw bbox on the mask
+    bbox_mask = mask.copy()
+    util.img.draw_contours(bbox_mask, cnts, idx = -1, color = 1, border_width = -1)
+    
+    jaccard = np.zeros((len(gxs),), dtype = np.float32)
+    # draw ground truth 
+    for gt_idx, gt_bbox in enumerate(zip(gxs, gys)):
+        gt_mask = mask.copy()
+        gt_bbox = np.transpose(gt_bbox)
+        assert gt_bbox.shape == (4, 2)
+        gt_cnts = util.img.points_to_contours(gt_bbox)
+        util.img.draw_contours(gt_mask, gt_cnts, idx = -1, color = 1, border_width = -1)
+        
+        intersect = np.sum(bbox_mask and gt_mask)
+        union = np.sum(bbox_mask or gt_mask)
+        import pdb
+        pdb.set_trace()
+        assert(intersect == np.sum(bbox_mask * gt_mask))
+        assert(intersect == np.sum((bbox_mask + gt_mask)) > 0)
+        iou = intersect * 1.0 / union
+        jaccard[gt_idx] = iou
+        
+    return jaccard
     
