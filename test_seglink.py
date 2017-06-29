@@ -1,5 +1,7 @@
 #encoding = utf-8
-
+"""Read test images, and store the detection result as txt files and zip file. 
+    The zip file follows the rule of ICDAR2015 Challenge4 Task1
+"""
 import numpy as np
 import math
 import tensorflow as tf # test
@@ -11,7 +13,6 @@ from tf_extended import seglink, metrics
 import util
 import cv2
 from nets import seglink_symbol, anchor_layer
-
 
 slim = tf.contrib.slim
 import config
@@ -183,10 +184,8 @@ def eval(dataset):
         saver.restore(sess, checkpoint)
         checkpoint_name = util.io.get_filename(str(checkpoint));
         dump_path = util.io.join_path(logdir, checkpoint_name)
-        xml_path = util.io.join_path(dump_path, 'xml')
         txt_path = util.io.join_path(dump_path,'txt')
         zip_path = util.io.join_path(dump_path, checkpoint_name +'.zip')
-        vis_path = util.io.join_path(dump_path, 'vis')
         
         # write detection result as txt files
         def write_result_as_txt(image_name, bboxes, path):

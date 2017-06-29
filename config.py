@@ -27,7 +27,7 @@ prior_scaling = [0.2, 0.5, 0.2, 0.5, 20.0]
 # prior_scaling = [1.0] * 5
 
 seg_confidence_threshold = 0.01
-link_confidence_threshold = 0.99
+link_confidence_threshold = 0.1
 
 data_format = 'NHWC'
 def _set_image_shape(shape):
