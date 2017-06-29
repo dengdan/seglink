@@ -57,9 +57,7 @@ def config_initialization():
         raise ValueError('You must supply the dataset directory with --dataset_dir')
     tf.logging.set_verbosity(tf.logging.DEBUG)
     
-    config.init_config(image_shape, batch_size = FLAGS.batch_size)
-
-    batch_size = config.batch_size
+    config.init_config(image_shape, batch_size = 1)
     
     util.proc.set_proc_name('eval_' + FLAGS.model_name + '_' + FLAGS.dataset_name )
     dataset = dataset_factory.get_dataset(FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
