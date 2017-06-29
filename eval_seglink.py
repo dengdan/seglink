@@ -110,7 +110,7 @@ def eval(dataset):
         
     dict_metrics = {}
     
-    with tf.name_scope('evaluation'):
+    with tf.name_scope('evaluation_%dx%d'%(FLAGS.eval_image_height, FLAGS.eval_image_width)):
         with tf.variable_scope(tf.get_variable_scope(), reuse = True):# the variables has been created in config.init_config
             # get input tensor
             image, seg_label, seg_loc, link_gt, filename, shape, gignored, gxs, gys = read_dataset(dataset)
