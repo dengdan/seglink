@@ -65,41 +65,40 @@ def config_initialization():
     return dataset
 
 def read_dataset(dataset):
-    with tf.device('/cpu:0'):
-        with tf.name_scope(FLAGS.dataset_name + '_data_provider'):
-            provider = slim.dataset_data_provider.DatasetDataProvider(
-                dataset,
-                num_readers=FLAGS.num_readers,
-                shuffle=False)
-            
-        [image, shape, filename, glabels, gbboxes, gignored, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
-                                                         'image', 'shape', 'filename',
-                                                         'object/label',
-                                                         'object/bbox', 
-                                                         'object/ignored',
-                                                         'object/oriented_bbox/x1',
-                                                         'object/oriented_bbox/x2',
-                                                         'object/oriented_bbox/x3',
-                                                         'object/oriented_bbox/x4',
-                                                         'object/oriented_bbox/y1',
-                                                         'object/oriented_bbox/y2',
-                                                         'object/oriented_bbox/y3',
-                                                         'object/oriented_bbox/y4'
-                                                         ])
-        gxs = tf.transpose(tf.stack([x1, x2, x3, x4])) #shape = (N, 4)
-        gys = tf.transpose(tf.stack([y1, y2, y3, y4]))
-        image = tf.identity(image, 'input_image')
+    with tf.name_scope(FLAGS.dataset_name + '_data_provider'):
+        provider = slim.dataset_data_provider.DatasetDataProvider(
+            dataset,
+            num_readers=FLAGS.num_readers,
+            shuffle=False)
         
-        # Pre-processing image, labels and bboxes.
-        image, glabels, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
-           
-                                                           out_shape = config.image_shape,
-                                                           data_format = config.data_format, 
-                                                           is_training = False)
-        image = tf.identity(image, 'processed_image')
-        
-        # calculate ground truth
-        seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
+    [image, shape, filename, glabels, gbboxes, gignored, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
+                                                     'image', 'shape', 'filename',
+                                                     'object/label',
+                                                     'object/bbox', 
+                                                     'object/ignored',
+                                                     'object/oriented_bbox/x1',
+                                                     'object/oriented_bbox/x2',
+                                                     'object/oriented_bbox/x3',
+                                                     'object/oriented_bbox/x4',
+                                                     'object/oriented_bbox/y1',
+                                                     'object/oriented_bbox/y2',
+                                                     'object/oriented_bbox/y3',
+                                                     'object/oriented_bbox/y4'
+                                                     ])
+    gxs = tf.transpose(tf.stack([x1, x2, x3, x4])) #shape = (N, 4)
+    gys = tf.transpose(tf.stack([y1, y2, y3, y4]))
+    image = tf.identity(image, 'input_image')
+    
+    # Pre-processing image, labels and bboxes.
+    image, glabels, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
+       
+                                                       out_shape = config.image_shape,
+                                                       data_format = config.data_format, 
+                                                       is_training = False)
+    image = tf.identity(image, 'processed_image')
+    
+    # calculate ground truth
+    seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
         
     return image, seg_label, seg_loc, link_gt, filename, shape, gignored, gxs, gys
 
