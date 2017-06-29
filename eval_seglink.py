@@ -65,7 +65,7 @@ def config_initialization():
     return dataset
 
 def read_dataset(dataset):
-    with tf.name_scope(FLAGS.dataset_name +'_'  + FLAGS.dataset_splitname + '_data_provider'):
+    with tf.name_scope(FLAGS.dataset_name +'_'  + FLAGS.dataset_split_name + '_data_provider'):
         provider = slim.dataset_data_provider.DatasetDataProvider(
             dataset,
             num_readers=FLAGS.num_readers,
