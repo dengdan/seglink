@@ -1,9 +1,11 @@
 set -x
 set -e
+# ./scripts/train.sh 0 18 synthtext
 export CUDA_VISIBLE_DEVICES=$1
 IMG_PER_GPU=$2
 DATASET=$3
-TRAIN_DIR=${HOME}/temp/no-use/seglink_debug_icdar2013
+
+TRAIN_DIR=${HOME}/temp/no-use/seglink_debug
 
 
 # get the number of gpus

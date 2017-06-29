@@ -1,5 +1,7 @@
 set -x
 set -e
+# ./scripts/eval.sh 1 icdar2013 train ckpt
+
 export CUDA_VISIBLE_DEVICES=$1
 DATASET=$2
 SPLIT=$3
@@ -30,8 +32,16 @@ python eval_seglink.py \
             --dataset_split_name=$SPLIT \
 			--eval_image_width=384 \
 			--eval_image_height=384 \
-			--gpu_memory_fraction=-1
+			--gpu_memory_fraction=0.3 &
 
+python eval_seglink.py \
+			--checkpoint_path=${CHECKPOINT_PATH} \
+            --dataset_dir=${DATASET_DIR} \
+            --dataset_name=${DATASET} \
+            --dataset_split_name=$SPLIT \
+			--eval_image_width=512 \
+			--eval_image_height=512 \
+			--gpu_memory_fraction=0.3
 			
 			
 			
