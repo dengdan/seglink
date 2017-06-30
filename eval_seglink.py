@@ -26,7 +26,7 @@ tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.1, 'the gpu memory fraction t
 # I/O and preprocessing Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_integer(
-    'num_readers', 1,
+    'num_readers', 4,
     'The number of parallel readers that read data from the dataset.')
 tf.app.flags.DEFINE_integer(
     'num_preprocessing_threads', 1,
@@ -103,12 +103,7 @@ def read_dataset(dataset):
     return image, seg_label, seg_loc, link_gt, filename, shape, gignored, gxs, gys
 
 def eval(dataset):
-    ground_truths = list()
-    for idx, gt in enumerate(ground_truths):
-        ground_truths[idx] = tf.expand_dims(gt, axis = 0)
-        
-    dict_metrics = {}
-    
+    dict_metrics = {} 
     with tf.name_scope('evaluation_%dx%d'%(FLAGS.eval_image_height, FLAGS.eval_image_width)):
         with tf.variable_scope(tf.get_variable_scope(), reuse = True):# the variables has been created in config.init_config
             # get input tensor

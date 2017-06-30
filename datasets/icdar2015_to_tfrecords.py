@@ -31,26 +31,32 @@ def cvt_to_tfrecords(output_path , data_path, gt_path):
             lines = util.io.read_lines(gt_filepath);
                 
             for line in lines:
-                gt = util.str.remove_all(line, ',')
-                gt = util.str.split(gt, ' ');
-                bbox = [int(gt[i]) for i in range(4)];
-                xmin, ymin, xmax, ymax  = np.asarray(bbox) / [w, h, w, h];
-                oriented_bboxes.append([xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax]);
+                line = util.str.remove_all(line, '\xef\xbb\xbf')
+                gt = util.str.split(line, ',');
+                oriented_box = [int(gt[i]) for i in range(8)];
+                oriented_box = np.asarray(oriented_box) / ([w, h] * 4);
+                oriented_bboxes.append(oriented_box);
+                
+                xs = oriented_box.reshape(4, 2)[:, 0]                
+                ys = oriented_box.reshape(4, 2)[:, 1]
+                xmin = xs.min()
+                xmax = xs.max()
+                ymin = ys.min()
+                ymax = ys.max()
                 bboxes.append([xmin, ymin, xmax, ymax])
-                ignored.append(0);
-                labels_text.append(line.split('"')[1]);
+                ignored.append(util.str.contains(gt[-1], '###'));
+
+                # might be wrong here, but it doesn't matter because the label is not going to be used in detection
+                labels_text.append(gt[-1]); 
                 labels.append(1);
             example = convert_to_example(image_data, image_name, labels, ignored, labels_text, bboxes, oriented_bboxes, shape)
             tfrecord_writer.write(example.SerializeToString())
         
 if __name__ == "__main__":
-    root_dir = util.io.get_absolute_path('~/dataset/ICDAR2015/Challenge2.Task123/')
-    training_data_dir = util.io.join_path(root_dir, 'Challenge2_Training_Task12_Images')
-    training_gt_dir = util.io.join_path(root_dir,'Challenge2_Training_Task1_GT')
-    test_data_dir = util.io.join_path(root_dir,'Challenge2_Test_Task12_Images')
-    test_gt_dir = util.io.join_path(root_dir,'Challenge2_Test_Task1_GT')
+    root_dir = util.io.get_absolute_path('~/dataset/ICDAR2015/Challenge4/')
+    training_data_dir = util.io.join_path(root_dir, 'ch4_training_images')
+    training_gt_dir = util.io.join_path(root_dir,'ch4_training_localization_transcription_gt')
     
     output_dir = util.io.get_absolute_path('~/dataset/SSD-tf/ICDAR/')
     util.io.mkdir(output_dir);
-    cvt_to_tfrecords(output_path = util.io.join_path(output_dir, 'icdar2013_train.tfrecord'), data_path = training_data_dir, gt_path = training_gt_dir)
-    cvt_to_tfrecords(output_path = util.io.join_path(output_dir,  'icdar2013_test.tfrecord'), data_path = test_data_dir, gt_path = test_gt_dir)
+    cvt_to_tfrecords(output_path = util.io.join_path(output_dir, 'icdar2015_train.tfrecord'), data_path = training_data_dir, gt_path = training_gt_dir)

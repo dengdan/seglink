@@ -175,15 +175,17 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold = 0.5, scope=
         n_bboxes = tf.shape(bboxes)[0]
         rshape = (n_bboxes, )
         # True/False positive matching TensorArrays.
+        # ta is short for TensorArray
         ta_tp_bool = tf.TensorArray(tf.bool, size=n_bboxes, dynamic_size=False, infer_shape=True)
         ta_fp_bool = tf.TensorArray(tf.bool, size=n_bboxes, dynamic_size=False, infer_shape=True)
-
+        
+        n_ignored_det = 0
         # Loop over returned objects.
-        def m_condition(i, ta_tp, ta_fp, gmatch):
+        def m_condition(i, ta_tp, ta_fp, gmatch, n_ignored_det):
             r = tf.less(i, tf.shape(bboxes)[0])
             return r
 
-        def m_body(i, ta_tp, ta_fp, gmatch):
+        def m_body(i, ta_tp, ta_fp, gmatch, n_ignored_det):
             # Jaccard score with groundtruth bboxes.
             rbbox = bboxes[i, :]
             jaccard = bboxes_jaccard(rbbox, gxs, gys)
@@ -196,6 +198,7 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold = 0.5, scope=
             existing_match = gmatch[idxmax]
             not_ignored = tf.logical_not(gignored[idxmax])
 
+            n_ignored_det = n_ignored_det + tf.cast(gignored[idxmax], tf.int32)
             # TP: match & no previous match and FP: previous match | no match.
             # If ignored: no record, i.e FP=False and TP=False.
             tp = tf.logical_and(not_ignored, tf.logical_and(match, tf.logical_not(existing_match)))
@@ -207,12 +210,12 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold = 0.5, scope=
             # Update grountruth match.
             mask = tf.logical_and(tf.equal(grange, idxmax), tf.logical_and(not_ignored, match))
             gmatch = tf.logical_or(gmatch, mask)
-            return [i+1, ta_tp, ta_fp, gmatch]
+            return [i+1, ta_tp, ta_fp, gmatch,n_ignored_det]
         # Main loop definition.
         i = 0
-        [i, ta_tp_bool, ta_fp_bool, gmatch] = \
+        [i, ta_tp_bool, ta_fp_bool, gmatch, n_ignored_det] = \
             tf.while_loop(m_condition, m_body,
-                          [i, ta_tp_bool, ta_fp_bool, gmatch],
+                          [i, ta_tp_bool, ta_fp_bool, gmatch, n_ignored_det],
                           parallel_iterations=1,
                           back_prop=False)
         # TensorArrays to Tensors and reshape.
@@ -220,12 +223,13 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold = 0.5, scope=
         fp_match = tf.reshape(ta_fp_bool.stack(), rshape)
 
         # Some debugging information...
-#         tp_match = tf.Print(tp_match,
-#                             [n_gbboxes, n_bboxes, 
-#                              tf.reduce_sum(tf.cast(tp_match, tf.int64)),
-#                              tf.reduce_sum(tf.cast(fp_match, tf.int64)),
-#                              tf.reduce_sum(tf.cast(gmatch, tf.int64))],
-#                             'Matching (NG, ND, TP, FP, GM): ')
+        tp_match = tf.Print(tp_match,
+                            [n_gbboxes, n_bboxes, 
+                             tf.reduce_sum(tf.cast(tp_match, tf.int64)),
+                             tf.reduce_sum(tf.cast(fp_match, tf.int64)),
+                             n_ignored_det,
+                             tf.reduce_sum(tf.cast(gmatch, tf.int64))],
+                            'Matching (NG, ND, TP, FP, n_ignored_det,GM): ')
         return n_gbboxes, tp_match, fp_match
 
 def bboxes_jaccard(bbox, gxs, gys):

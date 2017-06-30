@@ -5,7 +5,8 @@ export CUDA_VISIBLE_DEVICES=$1
 IMG_PER_GPU=$2
 DATASET=$3
 
-TRAIN_DIR=${HOME}/temp/no-use/seglink_debug
+#TRAIN_DIR=${HOME}/models/seglink/seglink_synthtext
+TRAIN_DIR=${HOME}/temp/no-use/seglink_debug3
 
 
 # get the number of gpus

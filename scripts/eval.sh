@@ -21,6 +21,9 @@ then
 elif [ $DATASET == 'icdar2013' ]
 then
     DATA_PATH=ICDAR
+elif [ $DATASET == 'icdar2015' ]
+then
+    DATA_PATH=ICDAR
 else
     echo invalid dataset: $DATASET
     exit

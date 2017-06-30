@@ -8,9 +8,15 @@ import util
 
 global feat_shapes
 global image_shape
+
+
 global default_anchors
+global defalt_anchor_map
+global default_anchor_center_set
 global num_anchors
 global num_links
+
+
 global batch_size
 global batch_size_per_gpu
 global gpus
@@ -26,8 +32,8 @@ max_height_ratio = 1.5
 prior_scaling = [0.2, 0.5, 0.2, 0.5, 20.0]
 # prior_scaling = [1.0] * 5
 
-seg_confidence_threshold = 0.01
-link_confidence_threshold = 0.1
+seg_confidence_threshold = 0.1
+link_confidence_threshold = 0.01
 
 data_format = 'NHWC'
 def _set_image_shape(shape):
@@ -41,6 +47,15 @@ def _set_feat_shapes(shapes):
 def _set_batch_size(bz):
     global batch_size
     batch_size = bz
+    
+def _build_anchor_map():
+    global default_anchor_map
+    global default_anchor_center_set
+    import collections
+    default_anchor_map = collections.defaultdict(list)
+    for anchor_idx, anchor in enumerate(default_anchors):
+        default_anchor_map[(int(anchor[1]), int(anchor[0]))].append(anchor_idx)
+    default_anchor_center_set = set(default_anchor_map.keys())
     
 def init_config(image_shape, batch_size = 1, weight_decay = 0.0005, num_gpus = 1):
     from nets import anchor_layer
@@ -71,6 +86,8 @@ def init_config(image_shape, batch_size = 1, weight_decay = 0.0005, num_gpus = 1
     
     global num_anchors
     num_anchors = len(anchors)
+    
+    _build_anchor_map()
     
     global num_links
     num_links = num_anchors * 8 + (num_anchors - np.prod(feat_shapes[feat_layers[0]])) * 4

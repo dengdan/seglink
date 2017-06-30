@@ -50,7 +50,9 @@ def min_area_rect(xs, ys):
     
     box = np.asarray(box, dtype = xs.dtype)
     return box
-    
+
+def tf_min_area_rect(xs, ys):
+    return tf.py_func(min_area_rect, [xs, ys], xs.dtype)
 
 def transform_cv_rect(rects):
     """Transform the rects from opencv method minAreaRect to our rects. 
@@ -185,6 +187,7 @@ def cal_seg_loc_for_single_anchor(anchor, rect):
     return rect    
     
 
+@util.dec.print_calling_in_short_for_tf
 def match_anchor_to_text_boxes(anchors, xs, ys):
     """Match anchors to text boxes. 
        Return:
@@ -223,11 +226,12 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
         cnt = util.img.points_to_contour(bbox_points);
         cnts.append(cnt)
         
+    import time
+    start_time = time.time()
     # match anchor to bbox
     for anchor_idx in xrange(num_anchors):
         anchor = anchors[anchor_idx, :]
         acx, acy, aw, ah = anchor
-        
         center_point_matched = False
         height_matched = False
         for bbox_idx in xrange(num_bboxes):
@@ -245,9 +249,71 @@ def match_anchor_to_text_boxes(anchors, xs, ys):
                 seg_labels[anchor_idx] = bbox_idx
                 seg_locations[anchor_idx, :] = cal_seg_loc_for_single_anchor(anchor, rect)
         
-        
+    end_time = time.time()
+    tf.logging.info('Time in For Loop: %f'%(end_time - start_time))
     return seg_labels, seg_locations
 
+# @util.dec.print_calling_in_short_for_tf
+def match_anchor_to_text_boxes_fast(anchors, xs, ys):
+    """Match anchors to text boxes. 
+       Return:
+           seg_labels: shape = (N,), the seg_labels of segments. each value is the index of matched box if >=0.  
+           seg_locations: shape = (N, 5), the absolute location of segments. Only the match segments are correctly calculated.
+           
+    """
+    
+    assert len(np.shape(anchors)) == 2 and np.shape(anchors)[1] == 4, "the anchors must be a tensor with shape = (num_anchors, 4)"
+    assert len(np.shape(xs)) == 2 and np.shape(xs) == np.shape(ys) and np.shape(ys)[1] == 4, "the xs, ys must be a tensor with shape = (num_bboxes, 4)"
+    anchors = np.asarray(anchors, dtype = np.float32)
+    xs = np.asarray(xs, dtype = np.float32)
+    ys = np.asarray(ys, dtype = np.float32)
+    
+    num_anchors = anchors.shape[0]
+    seg_labels = np.ones((num_anchors, ), dtype = np.int32) * -1;
+    seg_locations = np.zeros((num_anchors, 5), dtype = np.float32)
+    
+    # to avoid ln(0) in the ending process later.
+    #     because the height and width will be encoded using ln(w_seg / w_anchor)
+    seg_locations[:, 2] = anchors[:, 2]
+    seg_locations[:, 3] = anchors[:, 3]
+    
+    num_bboxes = xs.shape[0]
+    
+    
+    #represent bboxes using min area rects
+    rects = min_area_rect(xs, ys) # shape = (num_bboxes, 5)
+    rects = transform_cv_rect(rects)
+    assert rects.shape == (num_bboxes, 5)
+    
+    # construct a bbox point map: keys are the poistion of all points in bbox contours, and 
+    #    value being the bbox index
+    bbox_mask = np.ones(config.image_shape, dtype = np.int32) * (-1)
+    for bbox_idx in xrange(num_bboxes):
+        bbox_points = zip(xs[bbox_idx, :], ys[bbox_idx, :])
+        bbox_cnts = util.img.points_to_contours(bbox_points)
+        util.img.draw_contours(bbox_mask, bbox_cnts, -1, color = bbox_idx, border_width = - 1)
+    
+    points_in_bbox_mask = np.where(bbox_mask >= 0)
+    points_in_bbox_mask = set(zip(*points_in_bbox_mask))
+    points_in_bbox_mask = points_in_bbox_mask.intersection(config.default_anchor_center_set)
+    
+    for point in points_in_bbox_mask:
+        anchors_here = config.default_anchor_map[point]
+        for anchor_idx in anchors_here:
+            anchor = anchors[anchor_idx, :]
+            bbox_idx = bbox_mask[point]
+            acx, acy, aw, ah = anchor
+            height_matched = False
+                    
+            # height height_ratio check
+            rect = rects[bbox_idx, :]
+            height_ratio = anchor_rect_height_ratio(anchor, rect)
+            height_matched = height_ratio <= config.max_height_ratio
+            if height_matched:
+                # an anchor can only be matched to at most one bbox
+                seg_labels[anchor_idx] = bbox_idx
+                seg_locations[anchor_idx, :] = cal_seg_loc_for_single_anchor(anchor, rect)
+    return seg_labels, seg_locations
 
 
 ############################################################################################################
@@ -373,6 +439,7 @@ def cal_link_gt(labels):
     link_gt = np.hstack([inter_layer_link_gts, cross_layer_link_gts])
     return link_gt
 
+# @util.dec.print_calling_in_short_for_tf
 def encode_seg_gt(seg_loc):
     """
     Args:
@@ -424,11 +491,22 @@ def decode_seg_offsets_pred(seg_offsets_pred):
     seg_loc = np.transpose(np.vstack([seg_cx, seg_cy, seg_w, seg_h, seg_theta]))
     return seg_loc
 
-
+# @util.dec.print_calling_in_short_for_tf
 def get_all_seglink_gt(xs, ys):
     anchors = config.default_anchors
     
-    seg_labels, seg_locations = match_anchor_to_text_boxes(anchors, xs, ys);
+#     seg_labels, seg_locations = match_anchor_to_text_boxes(anchors, xs, ys);
+    seg_labels, seg_locations = match_anchor_to_text_boxes_fast(anchors, xs, ys);
+    
+#     try:
+#         np.testing.assert_array_equal(seg_labels, seg_labels2)
+#     except:
+#         print np.where(seg_labels >= 0)
+#         print np.where(seg_labels2 >= 0)
+#     
+#         print seg_labels[np.where(seg_labels >= 0)]
+#         print seg_labels2[np.where(seg_labels2 >= 0)]    
+
     link_gt = cal_link_gt(seg_labels);
 
     seg_gt = encode_seg_gt(seg_locations)

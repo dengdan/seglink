@@ -24,7 +24,7 @@ tf.app.flags.DEFINE_float('gpu_memory_fraction', -1, 'the gpu memory fraction to
 tf.app.flags.DEFINE_integer('batch_size', None, 'The number of samples in each batch.')
 tf.app.flags.DEFINE_integer('num_gpus', 1, 'The number of gpus can be used.')
 tf.app.flags.DEFINE_integer('max_number_of_steps', 1000000, 'The maximum number of training steps.')
-tf.app.flags.DEFINE_integer('log_every_n_steps', 1, 'log frequency')
+tf.app.flags.DEFINE_integer('log_every_n_steps', 10, 'log frequency')
 tf.app.flags.DEFINE_bool("ignore_missing_vars", True, '')
 tf.app.flags.DEFINE_string('checkpoint_exclude_scopes', None, 'checkpoint_exclude_scopes')
 
@@ -40,10 +40,10 @@ tf.app.flags.DEFINE_float('weight_decay', 0.0005, 'The weight decay on the model
 # I/O and preprocessing Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_integer(
-    'num_readers', 4,
+    'num_readers', 1,
     'The number of parallel readers that read data from the dataset.')
 tf.app.flags.DEFINE_integer(
-    'num_preprocessing_threads', 4,
+    'num_preprocessing_threads', 2,
     'The number of threads used to create the batches.')
 
 # =========================================================================== #
@@ -128,7 +128,7 @@ def create_dataset_batch_queue(dataset):
         b_image, b_seg_label, b_seg_loc, b_link_gt = tf.train.batch(
             [image, seg_label, seg_loc, link_gt],
             batch_size = config.batch_size_per_gpu,
-            num_threads=FLAGS.num_preprocessing_threads,
+            num_threads= FLAGS.num_preprocessing_threads,
             capacity = 50)
             
         batch_queue = slim.prefetch_queue.prefetch_queue(
@@ -160,7 +160,7 @@ def create_clones(batch_queue):
         learning_rate = tf.constant(FLAGS.learning_rate, name='learning_rate')
         tf.summary.scalar('learning_rate', learning_rate)
         optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=FLAGS.momentum, name='Momentum')
-
+#         data = batch_queue.dequeue_many(config.num_clones)
     # place clones
     seglink_loss = 0; # for summary only
     gradients = []
@@ -170,6 +170,7 @@ def create_clones(batch_queue):
             with tf.name_scope(config.clone_scopes[clone_idx]) as clone_scope:
                 with tf.device(gpu) as clone_device:
                     b_image, b_seg_label, b_seg_loc, b_link_gt = batch_queue.dequeue()
+#                     b_image, b_seg_label, b_seg_loc, b_link_gt = (data[i][clone_idx] for i in range(len(data)))
                     net = seglink_symbol.SegLinkNet(inputs = b_image, data_format = config.data_format)
                     
                     # build seglink loss
@@ -222,9 +223,9 @@ def train(train_op):
             summary_op = summary_op,
             number_of_steps = FLAGS.max_number_of_steps,
             log_every_n_steps = FLAGS.log_every_n_steps,
-            save_summaries_secs = 30,
+            save_summaries_secs = 600,
             saver = saver,
-            save_interval_secs = 600,
+            save_interval_secs = 1200,
             session_config = sess_config
     )
 

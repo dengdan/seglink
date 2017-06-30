@@ -5,9 +5,8 @@ import util
 
 
 def draw_bbox(image_data, line, color):
-    line = util.str.remove_all(line, ',');
-    line = util.str.remove_all(line, '"');
-    data = line.split();
+    line = util.str.remove_all(line, '\xef\xbb\xbf')
+    data = line.split(',');
 
     def draw_rectangle():
         x1, y1, x2, y2 = [int(v) for v in data[0 : 4]]    
@@ -33,19 +32,20 @@ def draw_bbox(image_data, line, color):
         cnts = util.img.points_to_contours(points)
         util.img.draw_contours(image_data, cnts, -1, color = color, border_width = 1)
     
-    if len(data) == 5: # ic13 gt
-        draw_rectangle()
-        draw_text()
-    elif len(data) == 8:# all det
-        draw_oriented_bbox()
-    elif len(data) == 9: # ic15 gt
-        draw_oriented_bbox()
-        draw_text()
-    else:
-        import pdb
-        pdb.set_trace()
-        print data
-        raise ValueError
+    draw_oriented_bbox()
+#     if len(data) == 5: # ic13 gt
+#         draw_rectangle()
+#         draw_text()
+#     elif len(data) == 8:# all det
+#         draw_oriented_bbox()
+#     elif len(data) == 9: # ic15 gt
+#         draw_oriented_bbox()
+#         draw_text()
+#     else:
+#         import pdb
+#         pdb.set_trace()
+#         print data
+#         raise ValueError
        
 def visualize(image_root, det_root, output_root, gt_root = None):
     def read_gt_file(image_name):
@@ -86,6 +86,7 @@ if __name__ == '__main__':
     parser.add_argument('--gt', type=str, default=None,help='the directory of ground truth txt files')
     parser.add_argument('--det', type=str, required = True, help='the directory of detection result')
     parser.add_argument('--output', type=str, required = True, help='the directory to store images with bboxes')
+    
     args = parser.parse_args()
     print('**************Arguments*****************')
     print(args)

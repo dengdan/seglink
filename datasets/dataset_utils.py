@@ -13,18 +13,13 @@
 # limitations under the License.
 # ==============================================================================
 """Contains utilities for downloading and converting datasets."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
-import os
-import sys
-import tarfile
-
-from six.moves import urllib
 import tensorflow as tf
+import numpy as np
+slim = tf.contrib.slim
 
-LABELS_FILENAME = 'labels.txt'
+import util
+
 
 
 def int64_feature(value):
@@ -61,74 +56,108 @@ def image_to_tfexample(image_data, image_format, height, width, class_id):
     }))
 
 
-def download_and_uncompress_tarball(tarball_url, dataset_dir):
-    """Downloads the `tarball_url` and uncompresses it locally.
-
+def convert_to_example(image_data, filename, labels, ignored, labels_text, bboxes, oriented_bboxes, shape):
+    """Build an Example proto for an image example.
     Args:
-    tarball_url: The URL of a tarball file.
-    dataset_dir: The directory where the temporary files are stored.
-    """
-    filename = tarball_url.split('/')[-1]
-    filepath = os.path.join(dataset_dir, filename)
-
-    def _progress(count, block_size, total_size):
-        sys.stdout.write('\r>> Downloading %s %.1f%%' % (
-            filename, float(count * block_size) / float(total_size) * 100.0))
-        sys.stdout.flush()
-    filepath, _ = urllib.request.urlretrieve(tarball_url, filepath, _progress)
-    print()
-    statinfo = os.stat(filepath)
-    print('Successfully downloaded', filename, statinfo.st_size, 'bytes.')
-    tarfile.open(filepath, 'r:gz').extractall(dataset_dir)
-
-
-def write_label_file(labels_to_class_names, dataset_dir,
-                     filename=LABELS_FILENAME):
-    """Writes a file with the list of class names.
-
-    Args:
-    labels_to_class_names: A map of (integer) labels to class names.
-    dataset_dir: The directory in which the labels file should be written.
-    filename: The filename where the class names are written.
-    """
-    labels_filename = os.path.join(dataset_dir, filename)
-    with tf.gfile.Open(labels_filename, 'w') as f:
-        for label in labels_to_class_names:
-            class_name = labels_to_class_names[label]
-            f.write('%d:%s\n' % (label, class_name))
-
-
-def has_labels(dataset_dir, filename=LABELS_FILENAME):
-    """Specifies whether or not the dataset directory contains a label map file.
-
-    Args:
-    dataset_dir: The directory in which the labels file is found.
-    filename: The filename where the class names are written.
-
+      image_data: string, JPEG encoding of RGB image;
+      labels: list of integers, identifier for the ground truth;
+      labels_text: list of strings, human-readable labels;
+      oriented_bboxes: list of bounding oriented boxes; each box is a list of floats in [0, 1];
+          specifying [x1, y1, x2, y2, x3, y3, x4, y4]
+      bboxes: list of bbox in rectangle, [xmin, ymin, xmax, ymax] 
     Returns:
-    `True` if the labels file exists and `False` otherwise.
+      Example proto
     """
-    return tf.gfile.Exists(os.path.join(dataset_dir, filename))
+    
+    image_format = b'JPEG'
+    oriented_bboxes = np.asarray(oriented_bboxes)
+    bboxes = np.asarray(bboxes)
+    example = tf.train.Example(features=tf.train.Features(feature={
+            'image/shape': int64_feature(list(shape)),
+            'image/object/bbox/xmin': float_feature(list(bboxes[:, 0])),
+            'image/object/bbox/ymin': float_feature(list(bboxes[:, 1])),
+            'image/object/bbox/xmax': float_feature(list(bboxes[:, 2])),
+            'image/object/bbox/ymax': float_feature(list(bboxes[:, 3])),
+            'image/object/bbox/x1': float_feature(list(oriented_bboxes[:, 0])),
+            'image/object/bbox/y1': float_feature(list(oriented_bboxes[:, 1])),
+            'image/object/bbox/x2': float_feature(list(oriented_bboxes[:, 2])),
+            'image/object/bbox/y2': float_feature(list(oriented_bboxes[:, 3])),
+            'image/object/bbox/x3': float_feature(list(oriented_bboxes[:, 4])),
+            'image/object/bbox/y3': float_feature(list(oriented_bboxes[:, 5])),
+            'image/object/bbox/x4': float_feature(list(oriented_bboxes[:, 6])),
+            'image/object/bbox/y4': float_feature(list(oriented_bboxes[:, 7])),
+            'image/object/bbox/label': int64_feature(labels),
+            'image/object/bbox/label_text': bytes_feature(labels_text),
+            'image/object/bbox/ignored': int64_feature(ignored),
+            'image/format': bytes_feature(image_format),
+            'image/filename': bytes_feature(filename),
+            'image/encoded': bytes_feature(image_data)}))
+    return example
 
 
-def read_label_file(dataset_dir, filename=LABELS_FILENAME):
-    """Reads the labels file and returns a mapping from ID to class name.
 
-    Args:
-    dataset_dir: The directory in which the labels file is found.
-    filename: The filename where the class names are written.
+def get_split(split_name, dataset_dir, file_pattern, num_samples, reader=None):
+    dataset_dir = util.io.get_absolute_path(dataset_dir)
+    
+    if util.str.contains(file_pattern, '%'):
+        file_pattern = util.io.join_path(dataset_dir, file_pattern % split_name)
+    else:
+        file_pattern = util.io.join_path(dataset_dir, file_pattern)
+    # Allowing None in the signature so that dataset_factory can use the default.
+    if reader is None:
+        reader = tf.TFRecordReader
+    keys_to_features = {
+        'image/encoded': tf.FixedLenFeature((), tf.string, default_value=''),
+        'image/format': tf.FixedLenFeature((), tf.string, default_value='jpeg'),
+        'image/filename': tf.FixedLenFeature((), tf.string, default_value=''),
+        'image/shape': tf.FixedLenFeature([3], tf.int64),
+        'image/object/bbox/xmin': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/ymin': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/xmax': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/ymax': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/x1': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/x2': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/x3': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/x4': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/y1': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/y2': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/y3': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/y4': tf.VarLenFeature(dtype=tf.float32),
+        'image/object/bbox/ignored': tf.VarLenFeature(dtype=tf.int64),
+        'image/object/bbox/label': tf.VarLenFeature(dtype=tf.int64),
+    }
+    items_to_handlers = {
+        'image': slim.tfexample_decoder.Image('image/encoded', 'image/format'),
+        'shape': slim.tfexample_decoder.Tensor('image/shape'),
+        'filename': slim.tfexample_decoder.Tensor('image/filename'),
+        'object/bbox': slim.tfexample_decoder.BoundingBox(
+                ['ymin', 'xmin', 'ymax', 'xmax'], 'image/object/bbox/'),
+        'object/oriented_bbox/x1': slim.tfexample_decoder.Tensor('image/object/bbox/x1'),
+        'object/oriented_bbox/x2': slim.tfexample_decoder.Tensor('image/object/bbox/x2'),
+        'object/oriented_bbox/x3': slim.tfexample_decoder.Tensor('image/object/bbox/x3'),
+        'object/oriented_bbox/x4': slim.tfexample_decoder.Tensor('image/object/bbox/x4'),
+        'object/oriented_bbox/y1': slim.tfexample_decoder.Tensor('image/object/bbox/y1'),
+        'object/oriented_bbox/y2': slim.tfexample_decoder.Tensor('image/object/bbox/y2'),
+        'object/oriented_bbox/y3': slim.tfexample_decoder.Tensor('image/object/bbox/y3'),
+        'object/oriented_bbox/y4': slim.tfexample_decoder.Tensor('image/object/bbox/y4'),
+        'object/label': slim.tfexample_decoder.Tensor('image/object/bbox/label'),
+        'object/ignored': slim.tfexample_decoder.Tensor('image/object/bbox/ignored')
+    }
+    decoder = slim.tfexample_decoder.TFExampleDecoder(keys_to_features, items_to_handlers)
 
-    Returns:
-    A map from a label (integer) to class name.
-    """
-    labels_filename = os.path.join(dataset_dir, filename)
-    with tf.gfile.Open(labels_filename, 'rb') as f:
-        lines = f.read()
-    lines = lines.split(b'\n')
-    lines = filter(None, lines)
+    labels_to_names = {0:'background', 1:'text'}
+    items_to_descriptions = {
+        'image': 'A color image of varying height and width.',
+        'shape': 'Shape of the image',
+        'object/bbox': 'A list of bounding boxes, one per each object.',
+        'object/label': 'A list of labels, one per each object.',
+    }
 
-    labels_to_class_names = {}
-    for line in lines:
-        index = line.index(b':')
-        labels_to_class_names[int(line[:index])] = line[index+1:]
-    return labels_to_class_names
+    return slim.dataset.Dataset(
+            data_sources=file_pattern,
+            reader=reader,
+            decoder=decoder,
+            num_samples=num_samples,
+            items_to_descriptions=items_to_descriptions,
+            num_classes=2,
+            labels_to_names=labels_to_names)

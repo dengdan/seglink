@@ -1,4 +1,4 @@
 git add . --all
-git commit -m "evaluation/test tested code ok, training and optimization are in process now."
+git commit -m "accelerate groundtruth calculation."
 git push -u origin master
 
