@@ -23,6 +23,9 @@ global gpus
 global num_clones
 global clone_scopes
 
+global seg_conf_threshold
+global link_conf_threshold
+
 anchor_offset = 0.5    
 anchor_scale_gamma = 1.5
 feat_layers = ['conv4_3','fc7', 'conv6_2', 'conv7_2', 'conv8_2', 'conv9_2']
@@ -32,8 +35,6 @@ max_height_ratio = 1.5
 prior_scaling = [0.2, 0.5, 0.2, 0.5, 20.0]
 # prior_scaling = [1.0] * 5
 
-seg_confidence_threshold = 0.1
-link_confidence_threshold = 0.01
 
 data_format = 'NHWC'
 def _set_image_shape(shape):
@@ -47,7 +48,16 @@ def _set_feat_shapes(shapes):
 def _set_batch_size(bz):
     global batch_size
     batch_size = bz
+
+def _set_det_th(seg_conf_th, link_conf_th):
+    global seg_conf_threshold
+    global link_conf_threshold
     
+    seg_conf_threshold = seg_conf_th
+    link_conf_threshold = link_conf_th
+    
+    
+
 def _build_anchor_map():
     global default_anchor_map
     global default_anchor_center_set
@@ -57,7 +67,11 @@ def _build_anchor_map():
         default_anchor_map[(int(anchor[1]), int(anchor[0]))].append(anchor_idx)
     default_anchor_center_set = set(default_anchor_map.keys())
     
-def init_config(image_shape, batch_size = 1, weight_decay = 0.0005, num_gpus = 1):
+def init_config(image_shape, batch_size = 1, 
+                weight_decay = 0.0005, 
+                num_gpus = 1, 
+                seg_conf_threshold = 0.5,
+                link_conf_threshold = 0.5):
     from nets import anchor_layer
     from nets import seglink_symbol
 
@@ -108,6 +122,9 @@ def init_config(image_shape, batch_size = 1, weight_decay = 0.0005, num_gpus = 1
     batch_size_per_gpu = batch_size / num_clones
     if batch_size_per_gpu < 1:
         raise ValueError('Invalid batch_size [=%d], resulting in 0 images per gpu.'%(batch_size))
+    
+    _set_det_th(seg_conf_threshold, link_conf_threshold)
+    
     
 def print_config(flags, dataset, save_dir = None, print_to_file = True):
     def do_print(stream=None):

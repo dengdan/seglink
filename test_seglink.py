@@ -17,6 +17,14 @@ from nets import seglink_symbol, anchor_layer
 slim = tf.contrib.slim
 import config
 # =========================================================================== #
+# model threshold parameters
+# =========================================================================== #
+tf.app.flags.DEFINE_float('seg_conf_threshold', 0.5, 
+                          'the threshold on the confidence of segment')
+tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
+                          'the threshold on the confidence of linkage')
+
+# =========================================================================== #
 # Checkpoint and running Flags
 # =========================================================================== #
 tf.app.flags.DEFINE_string('checkpoint_path', None, 
@@ -58,7 +66,8 @@ def config_initialization():
         raise ValueError('You must supply the dataset directory with --dataset_dir')
     tf.logging.set_verbosity(tf.logging.DEBUG)
     
-    config.init_config(image_shape, batch_size = 1)
+    config.init_config(image_shape, batch_size = 1, seg_conf_threshold = FLAGS.seg_conf_threshold,
+                       link_conf_threshold = FLAGS.link_conf_threshold)
 
     batch_size = config.batch_size
     
@@ -183,7 +192,9 @@ def eval(dataset):
         threads = tf.train.start_queue_runners(sess=sess, coord=coord)
         saver.restore(sess, checkpoint)
         checkpoint_name = util.io.get_filename(str(checkpoint));
-        dump_path = util.io.join_path(logdir, checkpoint_name)
+        dump_path = util.io.join_path(logdir, checkpoint_name, 
+                                      'seg_link_conf_th_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold))
+        
         txt_path = util.io.join_path(dump_path,'txt')
         zip_path = util.io.join_path(dump_path, checkpoint_name +'.zip')
         

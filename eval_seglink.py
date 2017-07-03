@@ -16,6 +16,15 @@ from nets import seglink_symbol, anchor_layer
 slim = tf.contrib.slim
 import config
 # =========================================================================== #
+# model threshold parameters
+# =========================================================================== #
+tf.app.flags.DEFINE_float('seg_conf_threshold', 0.5, 
+                          'the threshold on the confidence of segment')
+tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
+                          'the threshold on the confidence of linkage')
+
+
+# =========================================================================== #
 # Checkpoint and running Flags
 # =========================================================================== #
 tf.app.flags.DEFINE_string('checkpoint_path', None, 
@@ -57,7 +66,9 @@ def config_initialization():
         raise ValueError('You must supply the dataset directory with --dataset_dir')
     tf.logging.set_verbosity(tf.logging.DEBUG)
     
-    config.init_config(image_shape, batch_size = 1)
+    config.init_config(image_shape, batch_size = 1, seg_conf_threshold = FLAGS.seg_conf_threshold,
+                       link_conf_threshold = FLAGS.link_conf_threshold)
+        
     
     util.proc.set_proc_name('eval_' + FLAGS.model_name + '_' + FLAGS.dataset_name )
     dataset = dataset_factory.get_dataset(FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
@@ -134,27 +145,29 @@ def eval(dataset):
             for name, metric in dict_metrics.items():
                 tf.summary.scalar(name, metric[0])
             
-            # decode seglink to bbox output, with absolute length, instead of being within [0,1]
-            bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
             
-            
-            # calculate true positive and false positive
-            # the xs and ys from tfrecord is 0~1, resize them to absolute length before matching.
-            # shape = (height, width, channels) when format = NHWC TODO
-            gxs = gxs * tf.cast(shape[1], gxs.dtype)
-            gys = gys * tf.cast(shape[0], gys.dtype)
-            num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching(bboxes_pred, gxs, gys, gignored)
-            tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
-            dict_metrics['tp_fp'] = (tp_fp_metric[0], tp_fp_metric[1])
-            
-            # precision and recall
-            precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
-            
-            fmean = tfe_metrics.fmean(precision, recall)
-            fmean = tf.Print(fmean, [precision, recall, fmean], 'Precision, Recall, Fmean = ')
-            tf.summary.scalar('Precision', precision)
-            tf.summary.scalar('Recall', recall)
-            tf.summary.scalar('F-mean', fmean)
+            with tf.name_scope('seg_link_conf_th_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)):
+                # decode seglink to bbox output, with absolute length, instead of being within [0,1]
+                bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
+                
+                
+                # calculate true positive and false positive
+                # the xs and ys from tfrecord is 0~1, resize them to absolute length before matching.
+    #             shape = (height, width, channels) when format = NHWC TODO
+                gxs = gxs * tf.cast(shape[1], gxs.dtype)
+                gys = gys * tf.cast(shape[0], gys.dtype)
+                num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching(bboxes_pred, gxs, gys, gignored)
+                tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
+                dict_metrics['tp_fp'] = (tp_fp_metric[0], tp_fp_metric[1])
+                
+                # precision and recall
+                precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
+                
+                fmean = tfe_metrics.fmean(precision, recall)
+                fmean = tf.Print(fmean, [precision, recall, fmean], 'Precision, Recall, Fmean = ')
+                tf.summary.scalar('Precision', precision)
+                tf.summary.scalar('Recall', recall)
+                tf.summary.scalar('F-mean', fmean)
             
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
 

@@ -536,13 +536,14 @@ def group_segs(seg_scores, link_scores):
     group segments based on their scores and links.
     Return: segment groups as a list, consisting of list of segment indexes, reprensting a group of segments belonging to a same bbox.
     """
-    seg_confidence_threshold = config.seg_confidence_threshold
-    link_confidence_threshold = config.link_confidence_threshold
+    seg_confidence_threshold = config.seg_conf_threshold
+    link_confidence_threshold = config.link_conf_threshold
+    
     
     assert len(np.shape(seg_scores)) == 1
     assert len(np.shape(link_scores)) == 1
     
-    valid_segs = np.where(seg_scores >= seg_confidence_threshold)[0];
+    valid_segs = np.where(seg_scores >= seg_confidence_threshold)[0];# `np.where` returns a tuple
     assert valid_segs.ndim == 1
     mask = {}
     for s in valid_segs:
@@ -595,7 +596,6 @@ def group_segs(seg_scores, link_scores):
         for y in xrange(lh):
             for x in xrange(lw):
                 seg_index = layer_seg_index[y, x]
-                
                 _seg_score = seg_scores[seg_index]
                 if _seg_score >= seg_confidence_threshold:
 
@@ -623,7 +623,7 @@ def group_segs(seg_scores, link_scores):
                                
                                 n_seg_index = previous_layer_seg_index[ny, nx]
                                 union(seg_index, n_seg_index)
-                                
+
     return to_list()
         
         

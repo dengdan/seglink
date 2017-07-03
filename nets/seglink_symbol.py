@@ -136,6 +136,8 @@ class SegLinkNet(object):
         self.link_score_logits = tf.concat([self.within_layer_link_scores, self.cross_layer_link_scores], axis = 1)
         self.link_scores = slim.softmax(self.link_score_logits)
         
+        tf.summary.histogram('link_scores', self.link_scores)
+        tf.summary.histogram('seg_scores', self.seg_scores)
         
     def build_loss(self, seg_label, seg_loc, link_label, seg_loc_loss_weight, link_conf_loss_weight, max_neg_pos_ratio = 3, do_summary = True):
         batch_size = tensor_shape(self.inputs)[0]

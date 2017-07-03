@@ -223,7 +223,7 @@ def train(train_op):
             summary_op = summary_op,
             number_of_steps = FLAGS.max_number_of_steps,
             log_every_n_steps = FLAGS.log_every_n_steps,
-            save_summaries_secs = 600,
+            save_summaries_secs = 60,
             saver = saver,
             save_interval_secs = 1200,
             session_config = sess_config

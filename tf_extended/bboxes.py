@@ -188,6 +188,7 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold = 0.5, scope=
         def m_body(i, ta_tp, ta_fp, gmatch, n_ignored_det):
             # Jaccard score with groundtruth bboxes.
             rbbox = bboxes[i, :]
+#             rbbox = tf.Print(rbbox, [rbbox])
             jaccard = bboxes_jaccard(rbbox, gxs, gys)
 
             # Best fit, checking it's above threshold.
