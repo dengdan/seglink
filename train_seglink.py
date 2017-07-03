@@ -17,14 +17,24 @@ import config
 # =========================================================================== #
 # Checkpoint and running Flags
 # =========================================================================== #
-tf.app.flags.DEFINE_string('train_dir', None, 'the path to store checkpoints and eventfiles for summaries')
+tf.app.flags.DEFINE_bool('train_with_ignored', False, 
+                           'whether to use ignored bbox (in ic15) in training.')
+tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0, 'the loss weight of segment localization')
+tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 'the loss weight of linkage classification loss')
+
+tf.app.flags.DEFINE_string('train_dir', None, 
+                           'the path to store checkpoints and eventfiles for summaries')
+
 tf.app.flags.DEFINE_string('checkpoint_path', None, 
    'the path of pretrained model to be used. If there are checkpoints in train_dir, this config will be ignored.')
-tf.app.flags.DEFINE_float('gpu_memory_fraction', -1, 'the gpu memory fraction to be used. If less than 0, allow_growth = True is used.')
+
+tf.app.flags.DEFINE_float('gpu_memory_fraction', -1, 
+                          'the gpu memory fraction to be used. If less than 0, allow_growth = True is used.')
+
 tf.app.flags.DEFINE_integer('batch_size', None, 'The number of samples in each batch.')
 tf.app.flags.DEFINE_integer('num_gpus', 1, 'The number of gpus can be used.')
 tf.app.flags.DEFINE_integer('max_number_of_steps', 1000000, 'The maximum number of training steps.')
-tf.app.flags.DEFINE_integer('log_every_n_steps', 10, 'log frequency')
+tf.app.flags.DEFINE_integer('log_every_n_steps', 1, 'log frequency')
 tf.app.flags.DEFINE_bool("ignore_missing_vars", True, '')
 tf.app.flags.DEFINE_string('checkpoint_exclude_scopes', None, 'checkpoint_exclude_scopes')
 
@@ -43,7 +53,7 @@ tf.app.flags.DEFINE_integer(
     'num_readers', 1,
     'The number of parallel readers that read data from the dataset.')
 tf.app.flags.DEFINE_integer(
-    'num_preprocessing_threads', 2,
+    'num_preprocessing_threads', 1,
     'The number of threads used to create the batches.')
 
 # =========================================================================== #
@@ -73,7 +83,14 @@ def config_initialization():
     util.init_logger(log_file = 'log_train_seglink_%d_%d.log'%image_shape, log_path = FLAGS.train_dir, stdout = False, mode = 'a')
     
     
-    config.init_config(image_shape, batch_size = FLAGS.batch_size, weight_decay = FLAGS.weight_decay, num_gpus = FLAGS.num_gpus)
+    config.init_config(image_shape, 
+                       batch_size = FLAGS.batch_size, 
+                       weight_decay = FLAGS.weight_decay, 
+                       num_gpus = FLAGS.num_gpus, 
+                       train_with_ignored = FLAGS.train_with_ignored,
+                       seg_loc_loss_weight = FLAGS.seg_loc_loss_weight, 
+                       link_cls_loss_weight = FLAGS.link_cls_loss_weight, 
+                       )
 
     batch_size = config.batch_size
     batch_size_per_gpu = config.batch_size_per_gpu
@@ -97,9 +114,9 @@ def create_dataset_batch_queue(dataset):
                 common_queue_min=30 * config.batch_size,
                 shuffle=True)
         # Get for SSD network: image, labels, bboxes.
-        [image, glabels, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
+        [image, gignored, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
                                                          'image',
-                                                         'object/label',
+                                                         'object/ignored',
                                                          'object/bbox', 
                                                          'object/oriented_bbox/x1',
                                                          'object/oriented_bbox/x2',
@@ -115,24 +132,24 @@ def create_dataset_batch_queue(dataset):
         image = tf.identity(image, 'input_image')
         
         # Pre-processing image, labels and bboxes.
-        image, glabels, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
+        image, gignored, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, gignored, gbboxes, gxs, gys, 
                                                            out_shape = config.image_shape,
                                                            data_format = config.data_format, 
                                                            is_training = True)
         image = tf.identity(image, 'processed_image')
         
         # calculate ground truth
-        seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
+        seg_label, seg_loc, link_label = seglink.tf_get_all_seglink_gt(gxs, gys, gignored)
         
         # batch them
-        b_image, b_seg_label, b_seg_loc, b_link_gt = tf.train.batch(
-            [image, seg_label, seg_loc, link_gt],
+        b_image, b_seg_label, b_seg_loc, b_link_label = tf.train.batch(
+            [image, seg_label, seg_loc, link_label],
             batch_size = config.batch_size_per_gpu,
             num_threads= FLAGS.num_preprocessing_threads,
             capacity = 50)
             
         batch_queue = slim.prefetch_queue.prefetch_queue(
-            [b_image, b_seg_label, b_seg_loc, b_link_gt],
+            [b_image, b_seg_label, b_seg_loc, b_link_label],
             capacity = 50) 
     return batch_queue    
 
@@ -160,7 +177,7 @@ def create_clones(batch_queue):
         learning_rate = tf.constant(FLAGS.learning_rate, name='learning_rate')
         tf.summary.scalar('learning_rate', learning_rate)
         optimizer = tf.train.MomentumOptimizer(learning_rate, momentum=FLAGS.momentum, name='Momentum')
-#         data = batch_queue.dequeue_many(config.num_clones)
+        
     # place clones
     seglink_loss = 0; # for summary only
     gradients = []
@@ -169,13 +186,15 @@ def create_clones(batch_queue):
         with tf.variable_scope(tf.get_variable_scope(), reuse = True):# the variables has been created in config.init_config
             with tf.name_scope(config.clone_scopes[clone_idx]) as clone_scope:
                 with tf.device(gpu) as clone_device:
-                    b_image, b_seg_label, b_seg_loc, b_link_gt = batch_queue.dequeue()
-#                     b_image, b_seg_label, b_seg_loc, b_link_gt = (data[i][clone_idx] for i in range(len(data)))
+                    b_image, b_seg_label, b_seg_loc, b_link_label = batch_queue.dequeue()
                     net = seglink_symbol.SegLinkNet(inputs = b_image, data_format = config.data_format)
                     
                     # build seglink loss
-                    net.build_loss(seg_label = b_seg_label, seg_loc = b_seg_loc, link_label = b_link_gt,
-                                  seg_loc_loss_weight = 1.0, link_conf_loss_weight = 1.0, do_summary = do_summary)
+                    net.build_loss(seg_labels = b_seg_label, 
+                                   seg_offsets = b_seg_loc, 
+                                   link_labels = b_link_label,
+                                   do_summary = do_summary)
+                    
                     
                     # gather seglink losses
                     losses = tf.get_collection(tf.GraphKeys.LOSSES, clone_scope)

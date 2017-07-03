@@ -6,6 +6,7 @@ import tensorflow as tf
 slim = tf.contrib.slim
 import util
 
+
 global feat_shapes
 global image_shape
 
@@ -23,6 +24,11 @@ global gpus
 global num_clones
 global clone_scopes
 
+
+global train_with_ignored
+global seg_loc_loss_weight
+global conf_cls_loss_weight
+
 global seg_conf_threshold
 global link_conf_threshold
 
@@ -35,6 +41,7 @@ max_height_ratio = 1.5
 prior_scaling = [0.2, 0.5, 0.2, 0.5, 20.0]
 # prior_scaling = [1.0] * 5
 
+max_neg_pos_ratio = 3
 
 data_format = 'NHWC'
 def _set_image_shape(shape):
@@ -56,7 +63,15 @@ def _set_det_th(seg_conf_th, link_conf_th):
     seg_conf_threshold = seg_conf_th
     link_conf_threshold = link_conf_th
     
+def  _set_loss_weight(seg_loc_loss_w, link_cls_loss_w):
+    global seg_loc_loss_weight
+    global link_cls_loss_weight
+    seg_loc_loss_weight = seg_loc_loss_w
+    link_cls_loss_weight = link_cls_loss_w
     
+def  _set_train_with_ignored(train_with_ignored_):
+    global train_with_ignored    
+    train_with_ignored = train_with_ignored_
 
 def _build_anchor_map():
     global default_anchor_map
@@ -70,27 +85,24 @@ def _build_anchor_map():
 def init_config(image_shape, batch_size = 1, 
                 weight_decay = 0.0005, 
                 num_gpus = 1, 
+                train_with_ignored = False,
+                seg_loc_loss_weight = 1.0,
+                link_cls_loss_weight = 1.0,
                 seg_conf_threshold = 0.5,
                 link_conf_threshold = 0.5):
-    from nets import anchor_layer
-    from nets import seglink_symbol
+
+    _set_det_th(seg_conf_threshold, link_conf_threshold)
+    _set_loss_weight(seg_loc_loss_weight, link_cls_loss_weight)
+    _set_train_with_ignored(train_with_ignored)
 
     h, w = image_shape
-    
-    collections = {}
-    
-    keys = [v for v in tf.GraphKeys.__dict__ if not v.startswith('__')]
-    for key in keys:
-        try:
-            collections[key] = tf.get_collection(key)
-        except:
-            print(key)
-        
+    from nets import anchor_layer
+    from nets import seglink_symbol
     fake_image = tf.ones((1, h, w, 3))
     fake_net = seglink_symbol.SegLinkNet(inputs = fake_image, weight_decay = weight_decay)
     feat_shapes = fake_net.get_shapes();
     
-    # the placement of this following lines are extremely important
+    # the placement of the following lines are extremely important
     _set_image_shape(image_shape)
     _set_feat_shapes(feat_shapes)
 
@@ -122,8 +134,6 @@ def init_config(image_shape, batch_size = 1,
     batch_size_per_gpu = batch_size / num_clones
     if batch_size_per_gpu < 1:
         raise ValueError('Invalid batch_size [=%d], resulting in 0 images per gpu.'%(batch_size))
-    
-    _set_det_th(seg_conf_threshold, link_conf_threshold)
     
     
 def print_config(flags, dataset, save_dir = None, print_to_file = True):

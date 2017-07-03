@@ -2,7 +2,7 @@
 
 import numpy as np
 import math
-import tensorflow as tf # test
+import tensorflow as tf
 from tensorflow.python.ops import control_flow_ops
 from tensorflow.contrib.training.python.training import evaluation
 from datasets import dataset_factory
@@ -18,6 +18,11 @@ import config
 # =========================================================================== #
 # model threshold parameters
 # =========================================================================== #
+tf.app.flags.DEFINE_string('train_with_ignored', False, 
+                           'whether to use ignored bbox (in ic15) in training.')
+tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0, 'the loss weight of segment localization')
+tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 'the loss weight of linkage classification loss')
+
 tf.app.flags.DEFINE_float('seg_conf_threshold', 0.5, 
                           'the threshold on the confidence of segment')
 tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
@@ -66,8 +71,12 @@ def config_initialization():
         raise ValueError('You must supply the dataset directory with --dataset_dir')
     tf.logging.set_verbosity(tf.logging.DEBUG)
     
-    config.init_config(image_shape, batch_size = 1, seg_conf_threshold = FLAGS.seg_conf_threshold,
-                       link_conf_threshold = FLAGS.link_conf_threshold)
+    config.init_config(image_shape, 
+                       batch_size = 1, 
+                       train_with_ignored = FLAGS.train_with_ignored,
+                       seg_loc_loss_weight = FLAGS.seg_loc_loss_weight, 
+                       link_cls_loss_weight = FLAGS.link_cls_loss_weight, 
+                       )
         
     
     util.proc.set_proc_name('eval_' + FLAGS.model_name + '_' + FLAGS.dataset_name )
@@ -82,11 +91,10 @@ def read_dataset(dataset):
             num_readers=FLAGS.num_readers,
             shuffle=False)
         
-    [image, shape, filename, glabels, gbboxes, gignored, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
+    [image, shape, filename, gignored, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
                                                      'image', 'shape', 'filename',
-                                                     'object/label',
-                                                     'object/bbox', 
                                                      'object/ignored',
+                                                     'object/bbox', 
                                                      'object/oriented_bbox/x1',
                                                      'object/oriented_bbox/x2',
                                                      'object/oriented_bbox/x3',
@@ -101,15 +109,14 @@ def read_dataset(dataset):
     image = tf.identity(image, 'input_image')
     
     # Pre-processing image, labels and bboxes.
-    image, glabels, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
-       
+    image, gignored, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, gignored, gbboxes, gxs, gys, 
                                                        out_shape = config.image_shape,
                                                        data_format = config.data_format, 
                                                        is_training = False)
     image = tf.identity(image, 'processed_image')
     
     # calculate ground truth
-    seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
+    seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys, gignored)
         
     return image, seg_label, seg_loc, link_gt, filename, shape, gignored, gxs, gys
 
@@ -129,8 +136,10 @@ def eval(dataset):
             
             # build seglink loss
             net = seglink_symbol.SegLinkNet(inputs = b_image, data_format = config.data_format)
-            net.build_loss(seg_label = b_seg_label, seg_loc = b_seg_loc, link_label = b_link_gt,
-                          seg_loc_loss_weight = 1.0, link_conf_loss_weight = 1.0, do_summary = False) # the summary will be added in the following lines
+            net.build_loss(seg_labels = b_seg_label, 
+                           seg_offsets = b_seg_loc, 
+                           link_labels = b_link_gt,
+                           do_summary = False) # the summary will be added in the following lines
             
             # gather seglink losses
             losses = tf.get_collection(tf.GraphKeys.LOSSES)
@@ -146,28 +155,28 @@ def eval(dataset):
                 tf.summary.scalar(name, metric[0])
             
             
-            with tf.name_scope('seg_link_conf_th_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)):
-                # decode seglink to bbox output, with absolute length, instead of being within [0,1]
-                bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
-                
-                
-                # calculate true positive and false positive
-                # the xs and ys from tfrecord is 0~1, resize them to absolute length before matching.
-    #             shape = (height, width, channels) when format = NHWC TODO
-                gxs = gxs * tf.cast(shape[1], gxs.dtype)
-                gys = gys * tf.cast(shape[0], gys.dtype)
-                num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching(bboxes_pred, gxs, gys, gignored)
-                tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
-                dict_metrics['tp_fp'] = (tp_fp_metric[0], tp_fp_metric[1])
-                
-                # precision and recall
-                precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
-                
-                fmean = tfe_metrics.fmean(precision, recall)
-                fmean = tf.Print(fmean, [precision, recall, fmean], 'Precision, Recall, Fmean = ')
-                tf.summary.scalar('Precision', precision)
-                tf.summary.scalar('Recall', recall)
-                tf.summary.scalar('F-mean', fmean)
+#             with tf.name_scope('seg_link_conf_th_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)):
+#                 # decode seglink to bbox output, with absolute length, instead of being within [0,1]
+#                 bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
+#                 
+#                 
+#                 # calculate true positive and false positive
+#                 # the xs and ys from tfrecord is 0~1, resize them to absolute length before matching.
+#     #             shape = (height, width, channels) when format = NHWC TODO
+#                 gxs = gxs * tf.cast(shape[1], gxs.dtype)
+#                 gys = gys * tf.cast(shape[0], gys.dtype)
+#                 num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching(bboxes_pred, gxs, gys, gignored)
+#                 tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
+#                 dict_metrics['tp_fp'] = (tp_fp_metric[0], tp_fp_metric[1])
+#                 
+#                 # precision and recall
+#                 precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
+#                 
+#                 fmean = tfe_metrics.fmean(precision, recall)
+#                 fmean = tf.Print(fmean, [precision, recall, fmean], 'Precision, Recall, Fmean = ')
+#                 tf.summary.scalar('Precision', precision)
+#                 tf.summary.scalar('Recall', recall)
+#                 tf.summary.scalar('F-mean', fmean)
             
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
 

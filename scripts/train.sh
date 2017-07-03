@@ -6,7 +6,7 @@ IMG_PER_GPU=$2
 DATASET=$3
 
 #TRAIN_DIR=${HOME}/models/seglink/seglink_synthtext
-TRAIN_DIR=${HOME}/models/seglink/seglink_icdar2015
+TRAIN_DIR=${HOME}/models/seglink/seglink_icdar2015_without_ignored
 
 CHKPT_PATH=${HOME}/models/seglink/seglink_synthtext
 
@@ -51,4 +51,5 @@ python train_seglink.py \
             --dataset_dir=${DATASET_DIR} \
             --dataset_name=${DATASET} \
             --dataset_split_name=train \
+            --train_with_ignored=0 \
 			--checkpoint_path=${CHKPT_PATH}

@@ -2,7 +2,7 @@
 import numpy as np;
 import tensorflow as tf
 import util;
-from dataset_utils import int64_feature, float_feature, bytes_feature
+from dataset_utils import int64_feature, float_feature, bytes_feature, convert_to_example
 
 # encoding = utf-8
 import numpy as np    
@@ -100,6 +100,7 @@ class SynthTextDataFetcher():
             if not is_valid:
                 continue;
             rect_bboxes.append([min_x, min_y, max_x, max_y])
+            xys = np.reshape(np.transpose(xys), -1)
             full_bboxes.append(xys);
             txt = self.get_txt(image_idx, word_idx);
             txts.append(txt);
@@ -109,69 +110,6 @@ class SynthTextDataFetcher():
         return image_path, img, txts, rect_bboxes, full_bboxes
     
         
-def _convert_to_example(image_data, labels, labels_text, rect_bboxes, full_bboxes, shape, difficult, truncated):
-    """Build an Example proto for an image example.
-    Args:
-      image_data: string, JPEG encoding of RGB image;
-      labels: list of integers, identifier for the ground truth;
-      labels_text: list of strings, human-readable labels;
-      bboxes: list of bounding boxes; each box is a list of floats in [0, 1];
-          specifying [xmin, ymin, xmax, ymax]. All boxes are assumed to belong
-          to the same label as the image label.
-      shape: 3 integers, image shapes in pixels.
-    Returns:
-      Example proto
-    """
-    xmin = []
-    ymin = []
-    xmax = []
-    ymax = []
-    
-    x1 = []; x2 = []; x3 = []; x4 = []
-    y1 = []; y2 = []; y3 = []; y4 = []
-    
-    for xys in full_bboxes:
-        xs = list(xys[0, :])
-        ys = list(xys[1, :])
-        # pylint: disable=expression-not-assigned
-        [l.append(point) for l, point in zip([x1, x2, x3, x4], xs)]
-        [l.append(point) for l, point in zip([y1, y2, y3, y4], ys)]
-        # pylint: enable=expression-not-assigned
-    
-    
-    for b in rect_bboxes:
-        assert len(b) == 4
-        # pylint: disable=expression-not-assigned
-        [l.append(point) for l, point in zip([xmin, ymin, xmax, ymax], b)]
-        # pylint: enable=expression-not-assigned
-    image_format = b'JPEG'
-    shape = list(shape)
-    example = tf.train.Example(features=tf.train.Features(feature={
-            'image/height': int64_feature(shape[0]),
-            'image/width': int64_feature(shape[1]),
-            'image/channels': int64_feature(shape[2]),
-            'image/shape': int64_feature(shape),
-            'image/object/bbox/xmin': float_feature(xmin),
-            'image/object/bbox/xmax': float_feature(xmax),
-            'image/object/bbox/ymin': float_feature(ymin),
-            'image/object/bbox/ymax': float_feature(ymax),
-            'image/object/bbox/x1': float_feature(x1),
-            'image/object/bbox/x2': float_feature(x2),
-            'image/object/bbox/x3': float_feature(x3),
-            'image/object/bbox/x4': float_feature(x4),
-            'image/object/bbox/y1': float_feature(y1),
-            'image/object/bbox/y2': float_feature(y2),
-            'image/object/bbox/y3': float_feature(y3),
-            'image/object/bbox/y4': float_feature(y4),
-            'image/object/bbox/label': int64_feature(labels),
-            'image/object/bbox/label_text': bytes_feature(labels_text),
-            'image/format': bytes_feature(image_format),
-            'image/object/bbox/difficult': int64_feature(difficult),
-            'image/object/bbox/truncated': int64_feature(truncated),
-            'image/encoded': bytes_feature(image_data)}))
-            
-    return example
-
 
 def cvt_to_tfrecords(output_path , data_path, gt_path, records_per_file = 50000):
 
@@ -190,31 +128,14 @@ def cvt_to_tfrecords(output_path , data_path, gt_path, records_per_file = 50000)
                 if record is None:
                     print '\nimage %d does not exist'%(image_idx + 1)
                     continue;
-                image_path, image, txts, rect_bboxes, full_bboxes = record;
-                """
-                h, w = image.shape[0:-1]
-                for bbox in rect_bboxes:
-                    xmin, ymin, xmax, ymax = bbox;
-                    xmin *= w
-                    xmax *= w
-                    ymin *= h
-                    ymax *= h
-                    util.img.rectangle(image, (int(xmin), int(ymin)), (int(xmax), int(ymax)), color = util.img.COLOR_WHITE)
-                for wi, xys in enumerate(full_bboxes):
-                    xys[0, :] = xys[0, :] * w
-                    xys[1, :] = xys[1, :] * h
-                    xys = xys.transpose()
-                    cnts = util.img.points_to_contours(xys)
-                    util.img.draw_contours(image, cnts, -1, color = util.img.COLOR_WHITE)
-                    util.img.put_text(image, txts[wi],(xys[0, 1], xys[1,1]), color = util.img.COLOR_WHITE)
-                util.img.imshow("%d"%(image_idx), image)
-                """
+
+                image_path, image, txts, rect_bboxes, oriented_bboxes = record;
                 labels = len(rect_bboxes) * [1];
-                difficult = len(rect_bboxes) * [0];
-                truncated = len(rect_bboxes) * [0];
+                ignored = len(rect_bboxes) * [0];
                 image_data = tf.gfile.FastGFile(image_path, 'r').read()
                 shape = image.shape
-                example = _convert_to_example(image_data, labels, txts, rect_bboxes, full_bboxes, shape, difficult, truncated)
+                image_name = str(util.io.get_filename(image_path).split('.')[0])
+                example = convert_to_example(image_data, image_name, labels, ignored, txts, rect_bboxes, oriented_bboxes, shape)
                 tfrecord_writer.write(example.SerializeToString())
                 record_count += 1;
                 

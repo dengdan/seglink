@@ -378,7 +378,7 @@ def is_valid_cord(x, y, w, h):
     """
     return x >=0 and x < w and y >= 0 and y < h;
 
-def cal_link_gt(labels):
+def cal_link_labels(labels):
     layer_labels = reshape_labels_by_layer(labels)
     inter_layer_link_gts = []
     cross_layer_link_gts = []
@@ -387,10 +387,10 @@ def cal_link_gt(labels):
         h, w = config.feat_shapes[layer_name]
         
         # initalize link groundtruth for the current layer
-        inter_layer_link_gt = np.zeros((h, w, 8), dtype = np.int32)
+        inter_layer_link_gt = np.ones((h, w, 8), dtype = np.int32) * (-1)
         
         if layer_idx > 0: # no cross-layer link for the first layer. 
-            cross_layer_link_gt = np.zeros((h, w, 4), dtype = np.int32)
+            cross_layer_link_gt = np.ones((h, w, 4), dtype = np.int32) * (-1)
             
         for x in xrange(w):
             for y in xrange(h):
@@ -411,7 +411,7 @@ def cal_link_gt(labels):
                             # if the current default box has matched the same bbox with this neighbour, \
                             # the linkage connecting them is labeled as positive.
                             if matched_idx == n_matched_idx: 
-                                inter_layer_link_gt[y, x, nidx] = 1;
+                                inter_layer_link_gt[y, x, nidx] = n_matched_idx;
                                 
                     # cross layer link_gt calculation
                     if layer_idx > 0:
@@ -424,7 +424,7 @@ def cal_link_gt(labels):
                             if is_valid_cord(nx, ny, pw, ph):
                                 n_matched_idx = previous_layer_match_result[ny, nx]
                                 if matched_idx == n_matched_idx:
-                                    cross_layer_link_gt[y, x, nidx] = 1;                             
+                                    cross_layer_link_gt[y, x, nidx] = n_matched_idx;                             
                     
         inter_layer_link_gts.append(inter_layer_link_gt)
         
@@ -492,37 +492,66 @@ def decode_seg_offsets_pred(seg_offsets_pred):
     return seg_loc
 
 # @util.dec.print_calling_in_short_for_tf
-def get_all_seglink_gt(xs, ys):
+def get_all_seglink_gt(xs, ys, ignored):
+    
+    # calculate ground truths. 
+    # for matching results, i.e., seg_labels and link_labels, the values stands for the 
+    #     index of matched bbox
+    assert len(np.shape(xs)) == 2 and \
+            np.shape(xs)[-1] == 4 and \
+            np.shape(ys) == np.shape(xs), \
+        'the shape of xs and ys must be (N, 4), but got %s and %s'%(np.shape(xs), np.shape(ys))
+    
+    assert len(xs) == len(ignored), 'the length of xs and `ignored` must be the same, \
+            but got %s and %s'%(len(xs), len(ignored))
+            
     anchors = config.default_anchors
-    
-#     seg_labels, seg_locations = match_anchor_to_text_boxes(anchors, xs, ys);
     seg_labels, seg_locations = match_anchor_to_text_boxes_fast(anchors, xs, ys);
+    link_labels = cal_link_labels(seg_labels)
+    seg_offsets = encode_seg_gt(seg_locations)
     
-#     try:
-#         np.testing.assert_array_equal(seg_labels, seg_labels2)
-#     except:
-#         print np.where(seg_labels >= 0)
-#         print np.where(seg_labels2 >= 0)
-#     
-#         print seg_labels[np.where(seg_labels >= 0)]
-#         print seg_labels2[np.where(seg_labels2 >= 0)]    
+    
+    # deal with ignored: use -2 to denotes ignored matchings temporarily
+    def set_ignored_labels(labels, idx):
+        cords = np.where(labels == idx)
+        labels[cords] = -2
+    
+    ignored_bbox_idxes = np.where(ignored == 1)[0]
+    for ignored_bbox_idx in ignored_bbox_idxes:
+        set_ignored_labels(link_labels, ignored_bbox_idx)
+        set_ignored_labels(seg_labels, ignored_bbox_idx)
+        
+        
+    # deal with bbox idxes: use 1 to replace all matched label
+    def set_positive_labels_to_one(labels):
+        cords = np.where(labels >= 0)
+        labels[cords] = 1
+        
+    set_positive_labels_to_one(seg_labels)
+    set_positive_labels_to_one(link_labels)
 
-    link_gt = cal_link_gt(seg_labels);
+    # deal with ignored: use 0 to replace all -2
+    def set_ignored_labels_to_zero(labels):
+        cords = np.where(labels == -2)
+        labels[cords] = 0
 
-    seg_gt = encode_seg_gt(seg_locations)
-    seg_labels = np.asarray(seg_labels >=0, dtype = np.int32);
+    set_ignored_labels_to_zero(seg_labels)
+    set_ignored_labels_to_zero(link_labels)
 
-    seg_gt = np.asarray(seg_gt, dtype = np.float32)
-    link_gt = np.asarray(link_gt, dtype = np.int32)
-    return seg_labels, seg_gt, link_gt
+    # set dtypes    
+    seg_labels = np.asarray(seg_labels, dtype = np.int32)
+    seg_offsets = np.asarray(seg_offsets, dtype = np.float32)
+    link_labels = np.asarray(link_labels, dtype = np.int32)
+    
+    return seg_labels, seg_offsets, link_labels
     
 
-def tf_get_all_seglink_gt(xs, ys):
+def tf_get_all_seglink_gt(xs, ys, ignored):
     h_I, w_I = config.image_shape
     
     xs = xs * w_I
     ys = ys * h_I    
-    labels, seg_gt, link_gt = tf.py_func(get_all_seglink_gt, [xs, ys], [tf.int32, tf.float32, tf.int32]);
+    labels, seg_gt, link_gt = tf.py_func(get_all_seglink_gt, [xs, ys, ignored], [tf.int32, tf.float32, tf.int32]);
     labels.set_shape([config.num_anchors])
     seg_gt.set_shape([config.num_anchors, 5])
     link_gt.set_shape([config.num_links])

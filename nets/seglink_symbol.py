@@ -139,8 +139,23 @@ class SegLinkNet(object):
         tf.summary.histogram('link_scores', self.link_scores)
         tf.summary.histogram('seg_scores', self.seg_scores)
         
-    def build_loss(self, seg_label, seg_loc, link_label, seg_loc_loss_weight, link_conf_loss_weight, max_neg_pos_ratio = 3, do_summary = True):
-        batch_size = tensor_shape(self.inputs)[0]
+    def build_loss(self, seg_labels, seg_offsets, link_labels, do_summary = True):
+        batch_size = config.batch_size_per_gpu
+        
+        # note that for label values in both seg_labels and link_labels:
+        #    -1 stands for negative
+        #     1 stands for positive
+        #     0 stands for ignored
+        def get_pos_and_neg_masks(labels):
+            if config.train_with_ignored:
+                pos_mask = labels >= 0
+                neg_mask = tf.logical_not(pos_mask)
+            else:
+                pos_mask = tf.equal(labels, 1)
+                neg_mask = tf.equal(labels, -1)
+            
+            return pos_mask, neg_mask
+        
         def OHNM_single_image(scores, n_pos, neg_mask):
             """Online Hard Negative Mining.
                 scores: the scores of being predicted as negative cls
@@ -151,7 +166,7 @@ class SegLinkNet(object):
                     if n_pos == 0, no negative samples will be selected.
             """
             def has_pos():
-                n_neg = n_pos * max_neg_pos_ratio
+                n_neg = n_pos * config.max_neg_pos_ratio
                 max_neg_entries = tf.reduce_sum(tf.cast(neg_mask, tf.int32))
                 n_neg = tf.minimum(n_neg, max_neg_entries)
                 n_neg = tf.cast(n_neg, tf.int32)
@@ -182,15 +197,15 @@ class SegLinkNet(object):
 
         # OHNM on segments
         seg_neg_scores = self.seg_scores[:, :, 0]
-        seg_pos_mask = seg_label > 0
-        seg_neg_mask = tf.logical_not(seg_pos_mask)
+        seg_pos_mask, seg_neg_mask = get_pos_and_neg_masks(seg_labels)
         seg_selected_mask = OHNM_batch(seg_neg_scores, seg_pos_mask, seg_neg_mask)
         n_seg_pos = tf.reduce_sum(tf.cast(seg_pos_mask, tf.float32))
         
-        
         with tf.name_scope('seg_cls_loss'):            
             def has_pos():
-                seg_cls_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits = self.seg_score_logits, labels = seg_label)
+                seg_cls_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    logits = self.seg_score_logits, 
+                    labels = tf.cast(seg_pos_mask, dtype = tf.int32))
                 return tf.reduce_sum(seg_cls_loss * seg_selected_mask) / n_seg_pos
             def no_pos():
                 return tf.constant(.0);
@@ -210,12 +225,12 @@ class SegLinkNet(object):
 
         with tf.name_scope('seg_loc_loss'):            
             def has_pos():
-                seg_loc_loss = smooth_l1_loss(self.seg_offsets, seg_loc, seg_pos_mask) * seg_loc_loss_weight / n_seg_pos
+                seg_loc_loss = smooth_l1_loss(self.seg_offsets, seg_offsets, seg_pos_mask) * config.seg_loc_loss_weight / n_seg_pos
                 names= ['loc_cx_loss', 'loc_cy_loss', 'loc_w_loss', 'loc_h_loss', 'loc_theta_loss']
                 sub_loc_losses = []
                 from tensorflow.python.ops import control_flow_ops
                 for idx, name in enumerate(names):
-                    name_loss = smooth_l1_loss(self.seg_offsets[:, :, idx], seg_loc[:,:, idx], seg_pos_mask) * seg_loc_loss_weight / n_seg_pos 
+                    name_loss = smooth_l1_loss(self.seg_offsets[:, :, idx], seg_offsets[:,:, idx], seg_pos_mask) * config.seg_loc_loss_weight / n_seg_pos 
                     name_loss = tf.identity(name_loss, name = name)
                     if do_summary:
                         tf.summary.scalar(name, name_loss)
@@ -229,23 +244,25 @@ class SegLinkNet(object):
 
         
         link_neg_scores = self.link_scores[:,:,0]
-        link_pos_mask = link_label > 0
-        link_neg_mask = tf.logical_not(link_pos_mask)
+        link_pos_mask, link_neg_mask = get_pos_and_neg_masks(link_labels)
         link_selected_mask = OHNM_batch(link_neg_scores, link_pos_mask, link_neg_mask)
         n_link_pos = tf.reduce_sum(tf.cast(link_pos_mask, dtype = tf.float32))
         with tf.name_scope('link_cls_loss'):
             def has_pos():
-                link_cls_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(logits = self.link_score_logits, labels = link_label)
+                link_cls_loss = tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    logits = self.link_score_logits, 
+                    labels = tf.cast(link_pos_mask, tf.int32))
                 return tf.reduce_sum(link_cls_loss * link_selected_mask) / n_link_pos
             def no_pos():
                 return tf.constant(.0);
-            link_cls_loss = tf.cond(n_link_pos > 0, has_pos, no_pos) * link_conf_loss_weight
+            link_cls_loss = tf.cond(n_link_pos > 0, has_pos, no_pos) * config.link_cls_loss_weight
             tf.add_to_collection(tf.GraphKeys.LOSSES, link_cls_loss)
         
         if do_summary:
             tf.summary.scalar('seg_cls_loss', seg_cls_loss)
             tf.summary.scalar('seg_loc_loss', seg_loc_loss)
             tf.summary.scalar('link_cls_loss', link_cls_loss)
+            
             
 def reshape_and_concat(tensors):
     def reshape(t):
