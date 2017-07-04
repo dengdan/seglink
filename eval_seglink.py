@@ -25,10 +25,10 @@ tf.app.flags.DEFINE_string('do_grid_search', False,
 tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0, 'the loss weight of segment localization')
 tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 'the loss weight of linkage classification loss')
 
-# tf.app.flags.DEFINE_float('seg_conf_threshold', 0.5, 
-#                           'the threshold on the confidence of segment')
-# tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
-#                           'the threshold on the confidence of linkage')
+tf.app.flags.DEFINE_float('seg_conf_threshold', 0.5, 
+                          'the threshold on the confidence of segment')
+tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
+                          'the threshold on the confidence of linkage')
 
 
 # =========================================================================== #
