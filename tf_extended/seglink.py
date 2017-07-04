@@ -560,19 +560,16 @@ def tf_get_all_seglink_gt(xs, ys, ignored):
 ############################################################################################################
 #                       linking segments together                                                          #
 ############################################################################################################
-def group_segs(seg_scores, link_scores):
+def group_segs(seg_scores, link_scores, seg_conf_threshold, link_conf_threshold):
     """
     group segments based on their scores and links.
     Return: segment groups as a list, consisting of list of segment indexes, reprensting a group of segments belonging to a same bbox.
     """
-    seg_confidence_threshold = config.seg_conf_threshold
-    link_confidence_threshold = config.link_conf_threshold
-    
     
     assert len(np.shape(seg_scores)) == 1
     assert len(np.shape(link_scores)) == 1
     
-    valid_segs = np.where(seg_scores >= seg_confidence_threshold)[0];# `np.where` returns a tuple
+    valid_segs = np.where(seg_scores >= seg_conf_threshold)[0];# `np.where` returns a tuple
     assert valid_segs.ndim == 1
     mask = {}
     for s in valid_segs:
@@ -626,7 +623,7 @@ def group_segs(seg_scores, link_scores):
             for x in xrange(lw):
                 seg_index = layer_seg_index[y, x]
                 _seg_score = seg_scores[seg_index]
-                if _seg_score >= seg_confidence_threshold:
+                if _seg_score >= seg_conf_threshold:
 
                     # find inter layer linked neighbours                    
                     inter_layer_neighbours = get_inter_layer_neighbours(x, y)
@@ -636,8 +633,8 @@ def group_segs(seg_scores, link_scores):
                         # the condition of connecting neighbour segment: valid coordinate, 
                         # valid segment confidence and valid link confidence.
                         if is_valid_cord(nx, ny, lw, lh) and \
-                            seg_scores[layer_seg_index[ny, nx]]  >= seg_confidence_threshold and \
-                            layer_inter_link_score[y, x, nidx] >= link_confidence_threshold:
+                            seg_scores[layer_seg_index[ny, nx]]  >= seg_conf_threshold and \
+                            layer_inter_link_score[y, x, nidx] >= link_conf_threshold:
                             n_seg_index = layer_seg_index[ny, nx]
                             union(seg_index, n_seg_index)
                     
@@ -647,8 +644,8 @@ def group_segs(seg_scores, link_scores):
                         for nidx, nxy in enumerate(cross_layer_neighbours):
                             nx, ny = nxy
                             if is_valid_cord(nx, ny, plw, plh) and \
-                               seg_scores[previous_layer_seg_index[ny, nx]]  >= seg_confidence_threshold and \
-                               layer_cross_link_score[y, x, nidx] >= link_confidence_threshold:
+                               seg_scores[previous_layer_seg_index[ny, nx]]  >= seg_conf_threshold and \
+                               layer_cross_link_score[y, x, nidx] >= link_conf_threshold:
                                
                                 n_seg_index = previous_layer_seg_index[ny, nx]
                                 union(seg_index, n_seg_index)
@@ -660,7 +657,8 @@ def group_segs(seg_scores, link_scores):
 ############################################################################################################
 #                       combining segments to bboxes                                                       #
 ############################################################################################################
-def tf_seglink_to_bbox(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shape):
+def tf_seglink_to_bbox(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shape, seg_conf_threshold = None, link_conf_threshold = None):
+    
     if len(seg_cls_pred.shape) == 3:
         assert seg_cls_pred.shape[0] == 1 # only batch_size == 1 supported now TODO
         seg_cls_pred = seg_cls_pred[0, ...]
@@ -674,11 +672,14 @@ def tf_seglink_to_bbox(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shap
     
     seg_scores = seg_cls_pred[:, 1]
     link_scores = link_cls_pred[:, 1]
-    image_bboxes = tf.py_func(seglink_to_bbox, [seg_scores, link_scores, seg_offsets_pred, image_shape], tf.float32);
+    image_bboxes = tf.py_func(seglink_to_bbox, 
+          [seg_scores, link_scores, seg_offsets_pred, image_shape, seg_conf_threshold, link_conf_threshold], 
+          tf.float32);
     return image_bboxes
     
     
-def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred, image_shape = None):
+def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred, 
+                    image_shape = None, seg_conf_threshold = None, link_conf_threshold = None):
     """
     Args:
         seg_scores: the scores of segments being positive
@@ -687,8 +688,10 @@ def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred, image_shape = Non
     Return:
         bboxes, with shape = (N, 5), and N is the number of predicted bboxes
     """
+    seg_conf_threshold = seg_conf_threshold or config.seg_conf_threshold
+    link_conf_threshold = link_conf_threshold or config.link_conf_threshold
     
-    seg_groups = group_segs(seg_scores, link_scores);
+    seg_groups = group_segs(seg_scores, link_scores, seg_conf_threshold, link_conf_threshold);
     seg_locs = decode_seg_offsets_pred(seg_offsets_pred)
     bboxes = []
     if image_shape is None:

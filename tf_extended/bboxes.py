@@ -224,13 +224,13 @@ def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold = 0.5, scope=
         fp_match = tf.reshape(ta_fp_bool.stack(), rshape)
 
         # Some debugging information...
-        tp_match = tf.Print(tp_match,
-                            [n_gbboxes, n_bboxes, 
-                             tf.reduce_sum(tf.cast(tp_match, tf.int64)),
-                             tf.reduce_sum(tf.cast(fp_match, tf.int64)),
-                             n_ignored_det,
-                             tf.reduce_sum(tf.cast(gmatch, tf.int64))],
-                            'Matching (NG, ND, TP, FP, n_ignored_det,GM): ')
+#         tp_match = tf.Print(tp_match,
+#                             [n_gbboxes, n_bboxes, 
+#                              tf.reduce_sum(tf.cast(tp_match, tf.int64)),
+#                              tf.reduce_sum(tf.cast(fp_match, tf.int64)),
+#                              n_ignored_det,
+#                              tf.reduce_sum(tf.cast(gmatch, tf.int64))],
+#                             'Matching (NG, ND, TP, FP, n_ignored_det,GM): ')
         return n_gbboxes, tp_match, fp_match
 
 def bboxes_jaccard(bbox, gxs, gys):

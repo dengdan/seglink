@@ -86,9 +86,9 @@ def create_dataset_batch_queue(dataset):
                 common_queue_min=30 * config.batch_size,
                 shuffle=False)
             
-        [image, shape, filename, glabels, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
+        [image, shape, filename, ignored, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
                                                          'image', 'shape', 'filename',
-                                                         'object/label',
+                                                         'object/ignored',
                                                          'object/bbox', 
                                                          'object/oriented_bbox/x1',
                                                          'object/oriented_bbox/x2',
@@ -104,14 +104,14 @@ def create_dataset_batch_queue(dataset):
         image = tf.identity(image, 'input_image')
         
         # Pre-processing image, labels and bboxes.
-        image, glabels, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
+        image, ignored, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, ignored, gbboxes, gxs, gys, 
                                                            out_shape = config.image_shape,
                                                            data_format = config.data_format, 
                                                            is_training = False)
         image = tf.identity(image, 'processed_image')
         
         # calculate ground truth
-        seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys)
+        seg_label, seg_loc, link_gt = seglink.tf_get_all_seglink_gt(gxs, gys, ignored)
         
         # batch them
         b_image, b_seg_label, b_seg_loc, b_link_gt, b_filename, b_shape = tf.train.batch(
@@ -144,30 +144,30 @@ def eval(dataset):
             b_image, b_seg_label, b_seg_loc, b_link_gt, b_filename, b_shape = batch_queue.dequeue()
             net = seglink_symbol.SegLinkNet(inputs = b_image, data_format = config.data_format)
             
-            # build seglink loss
-            net.build_loss(seg_label = b_seg_label, seg_loc = b_seg_loc, link_label = b_link_gt,
-                          seg_loc_loss_weight = 1.0, link_conf_loss_weight = 1.0, do_summary = False) # the summary will be added in the following lines
-            
-            # gather seglink losses
-            losses = tf.get_collection(tf.GraphKeys.LOSSES)
-            assert len(losses) ==  3  # 3 is the number of seglink losses: seg_cls, seg_loc, link_cls
-            for loss in tf.get_collection(tf.GraphKeys.LOSSES):
-                dict_metrics[loss.op.name] = slim.metrics.streaming_mean(loss)
-                
-            seglink_loss = tf.add_n(losses)
-            dict_metrics['seglink_loss'] = slim.metrics.streaming_mean(seglink_loss)
-            
-            # Add metrics to summaries.
-            for name, metric in dict_metrics.items():
-                tf.summary.scalar(name, metric[0])
+#             # build seglink loss
+#             net.build_loss(seg_labels = b_seg_label, seg_offsets = b_seg_loc, link_labels = b_link_gt,
+#                           seg_loc_loss_weight = 1.0, link_cls_loss_weight = 1.0, do_summary = False) # the summary will be added in the following lines
+#             
+#             # gather seglink losses
+#             losses = tf.get_collection(tf.GraphKeys.LOSSES)
+#             assert len(losses) ==  3  # 3 is the number of seglink losses: seg_cls, seg_loc, link_cls
+#             for loss in tf.get_collection(tf.GraphKeys.LOSSES):
+#                 dict_metrics[loss.op.name] = slim.metrics.streaming_mean(loss)
+#                 
+#             seglink_loss = tf.add_n(losses)
+#             dict_metrics['seglink_loss'] = slim.metrics.streaming_mean(seglink_loss)
+#             
+#             # Add metrics to summaries.
+#             for name, metric in dict_metrics.items():
+#                 tf.summary.scalar(name, metric[0])
                 
             # decode seglink to bbox output
             bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
 
             
-    names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
-    num_batches = int(math.ceil(dataset.num_samples / float(config.batch_size)))
+#     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
 
+    num_batches = int(math.ceil(dataset.num_samples / float(config.batch_size)))
     
     sess_config = tf.ConfigProto(log_device_placement = False, allow_soft_placement = True)
     if FLAGS.gpu_memory_fraction < 0:

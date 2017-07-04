@@ -20,13 +20,15 @@ import config
 # =========================================================================== #
 tf.app.flags.DEFINE_string('train_with_ignored', False, 
                            'whether to use ignored bbox (in ic15) in training.')
+tf.app.flags.DEFINE_string('do_grid_search', False, 
+                           'whether to do grid search to find a best combinations of seg_conf_threshold and link_conf_threshold.')
 tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0, 'the loss weight of segment localization')
 tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 'the loss weight of linkage classification loss')
 
-tf.app.flags.DEFINE_float('seg_conf_threshold', 0.5, 
-                          'the threshold on the confidence of segment')
-tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
-                          'the threshold on the confidence of linkage')
+# tf.app.flags.DEFINE_float('seg_conf_threshold', 0.5, 
+#                           'the threshold on the confidence of segment')
+# tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
+#                           'the threshold on the confidence of linkage')
 
 
 # =========================================================================== #
@@ -73,6 +75,8 @@ def config_initialization():
     
     config.init_config(image_shape, 
                        batch_size = 1, 
+                       seg_conf_threshold = FLAGS.seg_conf_threshold,
+                       link_conf_threshold = FLAGS.link_conf_threshold, 
                        train_with_ignored = FLAGS.train_with_ignored,
                        seg_loc_loss_weight = FLAGS.seg_loc_loss_weight, 
                        link_cls_loss_weight = FLAGS.link_cls_loss_weight, 
@@ -154,29 +158,35 @@ def eval(dataset):
             for name, metric in dict_metrics.items():
                 tf.summary.scalar(name, metric[0])
             
-            
-#             with tf.name_scope('seg_link_conf_th_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)):
-#                 # decode seglink to bbox output, with absolute length, instead of being within [0,1]
-#                 bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape)
-#                 
-#                 
-#                 # calculate true positive and false positive
-#                 # the xs and ys from tfrecord is 0~1, resize them to absolute length before matching.
-#     #             shape = (height, width, channels) when format = NHWC TODO
-#                 gxs = gxs * tf.cast(shape[1], gxs.dtype)
-#                 gys = gys * tf.cast(shape[0], gys.dtype)
-#                 num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching(bboxes_pred, gxs, gys, gignored)
-#                 tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
-#                 dict_metrics['tp_fp'] = (tp_fp_metric[0], tp_fp_metric[1])
-#                 
-#                 # precision and recall
-#                 precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
-#                 
-#                 fmean = tfe_metrics.fmean(precision, recall)
-#                 fmean = tf.Print(fmean, [precision, recall, fmean], 'Precision, Recall, Fmean = ')
-#                 tf.summary.scalar('Precision', precision)
-#                 tf.summary.scalar('Recall', recall)
-#                 tf.summary.scalar('F-mean', fmean)
+            # shape = (height, width, channels) when format = NHWC TODO
+            gxs = gxs * tf.cast(shape[1], gxs.dtype)
+            gys = gys * tf.cast(shape[0], gys.dtype)
+
+            if FLAGS.do_grid_search:
+                # grid search            
+                seg_ths = np.arange(0.1, 0.91, 0.1)
+                link_ths = seg_ths
+                for seg_th in seg_ths:
+                    for link_th in link_ths:
+                        config._set_det_th(seg_th, link_th)
+                        with tf.name_scope('seg_link_conf_th_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)):
+                            # decode seglink to bbox output, with absolute length, instead of being within [0,1]
+                            bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape, seg_conf_threshold = seg_th, link_conf_threshold = link_th)
+    #                         bboxes_pred = tf.Print(bboxes_pred, [tf.shape(bboxes_pred)], '%f_%f, shape of bboxes = '%(seg_th, link_th))
+                            # calculate true positive and false positive
+                            # the xs and ys from tfrecord is 0~1, resize them to absolute length before matching.
+                            num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching(bboxes_pred, gxs, gys, gignored)
+                            tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
+                            dict_metrics['tp_fp_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)] = (tp_fp_metric[0], tp_fp_metric[1])
+                             
+                            # precision and recall
+                            precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
+                             
+                            fmean = tfe_metrics.fmean(precision, recall)
+                            fmean = tf.Print(fmean, [precision, recall, fmean], '%f_%f, Precision, Recall, Fmean = '%(seg_th, link_th))
+                            tf.summary.scalar('Precision', precision)
+                            tf.summary.scalar('Recall', recall)
+                            tf.summary.scalar('F-mean', fmean)
             
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
 
@@ -188,8 +198,7 @@ def eval(dataset):
         sess_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction;
     
     checkpoint_dir = util.io.get_dir(FLAGS.checkpoint_path)
-    logdir = util.io.join_path(FLAGS.checkpoint_path, 'eval', FLAGS.dataset_name + '_' +FLAGS.dataset_split_name)
-    
+    logdir = util.io.join_path(checkpoint_dir, 'eval',  "%s_%s"%(FLAGS.dataset_name, FLAGS.dataset_split_name), util.io.get_filename(FLAGS.checkpoint_path))
     if util.io.is_dir(FLAGS.checkpoint_path):
         slim.evaluation.evaluation_loop(
             master = '',

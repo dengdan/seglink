@@ -40,8 +40,8 @@ python test_seglink.py \
 			--eval_image_width=${WIDTH} \
 			--eval_image_height=${HEIGHT} \
 			--gpu_memory_fraction=-1 \
-			--seg_conf_threshold=0.05 \
-			--link_conf_threshold=0.6
+			--seg_conf_threshold=0.1 \
+			--link_conf_threshold=0.5
 
 			
 			
