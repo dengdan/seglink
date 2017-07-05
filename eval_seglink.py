@@ -20,7 +20,7 @@ import config
 # =========================================================================== #
 tf.app.flags.DEFINE_string('train_with_ignored', False, 
                            'whether to use ignored bbox (in ic15) in training.')
-tf.app.flags.DEFINE_string('do_grid_search', False, 
+tf.app.flags.DEFINE_boolean('do_grid_search', False, 
                            'whether to do grid search to find a best combinations of seg_conf_threshold and link_conf_threshold.')
 tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0, 'the loss weight of segment localization')
 tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 'the loss weight of linkage classification loss')
@@ -161,7 +161,6 @@ def eval(dataset):
             # shape = (height, width, channels) when format = NHWC TODO
             gxs = gxs * tf.cast(shape[1], gxs.dtype)
             gys = gys * tf.cast(shape[0], gys.dtype)
-
             if FLAGS.do_grid_search:
                 # grid search            
                 seg_ths = np.arange(0.1, 0.91, 0.1)

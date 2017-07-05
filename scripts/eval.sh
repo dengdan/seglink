@@ -8,13 +8,13 @@ export CUDA_VISIBLE_DEVICES=$1
 #SPLIT=$3
 #WIDTH=$4
 #HEIGHT=$5
-#CHECKPOINT_PATH=$6
+CHECKPOINT_PATH=$6
 
 DATASET=icdar2015
 SPLIT=train
 WIDTH=1280
 HEIGHT=720
-CHECKPOINT_PATH=~/models/seglink/seglink_icdar2015_without_ignored/model.ckpt-72885
+#CHECKPOINT_PATH=~/models/seglink/seglink_icdar2015_without_ignored/model.ckpt-72885
 #dataset
 if [ $DATASET == 'synthtext' ]
 then

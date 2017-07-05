@@ -8,7 +8,7 @@ DATASET=$3
 TRAIN_DIR=${HOME}/models/seglink/seglink_synthtext_512
 #TRAIN_DIR=${HOME}/models/seglink/seglink_icdar2015_without_ignored
 
-CHKPT_PATH=${HOME}/models/seglink/seglink_synthtext
+CHKPT_PATH=${HOME}/models/ssd-pretrain/seglink
 
 # get the number of gpus
 OLD_IFS="$IFS" 
