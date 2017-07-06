@@ -35,7 +35,7 @@ python eval_seglink.py \
             --dataset_split_name=$SPLIT \
 			--eval_image_width=${WIDTH} \
 			--eval_image_height=${HEIGHT} \
-			--gpu_memory_fraction=-1 \
+			--gpu_memory_fraction=0.4 \
 			--do_grid_search=$7
 
 			

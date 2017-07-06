@@ -5,8 +5,8 @@ export CUDA_VISIBLE_DEVICES=$1
 IMG_PER_GPU=$2
 DATASET=$3
 
-CHKPT_PATH=${HOME}/models/seglink/seglink_synthtext_512
-TRAIN_DIR=${HOME}/models/seglink/seglink_icdar2015_512
+CHKPT_PATH=${HOME}/models/seglink/seglink_synthtext
+TRAIN_DIR=${HOME}/models/seglink/seglink_icdar2015_384
 #CHKPT_PATH=${HOME}/models/ssd-pretrain/seglink
 
 # get the number of gpus
@@ -44,8 +44,8 @@ python train_seglink.py \
 			--num_gpus=${NUM_GPUS} \
 			--learning_rate=0.0001 \
 			--gpu_memory_fraction=-1 \
-			--train_image_width=512 \
-			--train_image_height=512 \
+			--train_image_width=384 \
+			--train_image_height=384 \
 			--batch_size=${BATCH_SIZE}\
             --dataset_dir=${DATASET_DIR} \
             --dataset_name=${DATASET} \

@@ -25,9 +25,9 @@ tf.app.flags.DEFINE_boolean('do_grid_search', False,
 tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0, 'the loss weight of segment localization')
 tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 'the loss weight of linkage classification loss')
 
-tf.app.flags.DEFINE_float('seg_conf_threshold', 0.5, 
+tf.app.flags.DEFINE_float('seg_conf_threshold', 0.9, 
                           'the threshold on the confidence of segment')
-tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
+tf.app.flags.DEFINE_float('link_conf_threshold', 0.7, 
                           'the threshold on the confidence of linkage')
 
 
@@ -86,6 +86,8 @@ def config_initialization():
     util.proc.set_proc_name('eval_' + FLAGS.model_name + '_' + FLAGS.dataset_name )
     dataset = dataset_factory.get_dataset(FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
     config.print_config(FLAGS, dataset, print_to_file = False)
+    
+    
     return dataset
 
 def read_dataset(dataset):
@@ -127,6 +129,9 @@ def read_dataset(dataset):
 
 def eval(dataset):
     dict_metrics = {} 
+    checkpoint_dir = util.io.get_dir(FLAGS.checkpoint_path)
+    logdir = util.io.join_path(checkpoint_dir, 'eval',  "%s_%s"%(FLAGS.dataset_name, FLAGS.dataset_split_name), util.io.get_filename(FLAGS.checkpoint_path))
+
     with tf.name_scope('evaluation_%dx%d'%(FLAGS.eval_image_height, FLAGS.eval_image_width)):
         with tf.variable_scope(tf.get_variable_scope(), reuse = True):# the variables has been created in config.init_config
             # get input tensor
@@ -166,27 +171,42 @@ def eval(dataset):
                 # grid search            
                 seg_ths = np.arange(0.5, 0.91, 0.1)
                 link_ths = seg_ths
-                for seg_th in seg_ths:
-                    for link_th in link_ths:
-                        config._set_det_th(seg_th, link_th)
-                        with tf.name_scope('seg_link_conf_th_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)):
-                            # decode seglink to bbox output, with absolute length, instead of being within [0,1]
-                            bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets, b_shape, seg_conf_threshold = seg_th, link_conf_threshold = link_th)
-    #                         bboxes_pred = tf.Print(bboxes_pred, [tf.shape(bboxes_pred)], '%f_%f, shape of bboxes = '%(seg_th, link_th))
-                            # calculate true positive and false positive
-                            # the xs and ys from tfrecord is 0~1, resize them to absolute length before matching.
-                            num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching(bboxes_pred, gxs, gys, gignored)
-                            tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
-                            dict_metrics['tp_fp_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)] = (tp_fp_metric[0], tp_fp_metric[1])
-                             
-                            # precision and recall
-                            precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
-                             
-                            fmean = tfe_metrics.fmean(precision, recall)
-                            fmean = tf.Print(fmean, [recall, precision, fmean], '%f_%f, Recall, Precision, Fmean = '%(seg_th, link_th))
-                            tf.summary.scalar('Precision', precision)
-                            tf.summary.scalar('Recall', recall)
-                            tf.summary.scalar('F-mean', fmean)
+            else:
+                seg_ths = [FLAGS.seg_conf_threshold]
+                link_ths = [FLAGS.link_conf_threshold]
+            
+            eval_result_path = util.io.join_path(logdir, 'eval_on_%s_%s.log'%(FLAGS.dataset_name, FLAGS.dataset_split_name))
+            for seg_th in seg_ths:
+                for link_th in link_ths:
+                    config._set_det_th(seg_th, link_th)
+                    
+                    eval_result_msg = 'seg_conf_threshold=%f, link_conf_threshold = %f: '\
+                                            %(config.seg_conf_threshold, config.link_conf_threshold)
+                    eval_result_msg += 'recall = %r, precision = %f, fmean = %r'
+                    
+                    with tf.name_scope('seglink_conf_th_%f_%f'\
+                                       %(config.seg_conf_threshold, config.link_conf_threshold)):
+                        # decode seglink to bbox output, with absolute length, instead of being within [0,1]
+                        bboxes_pred = seglink.tf_seglink_to_bbox(net.seg_scores, net.link_scores, net.seg_offsets,
+                                                                  b_shape, seg_conf_threshold = seg_th, link_conf_threshold = link_th)
+#                         bboxes_pred = tf.Print(bboxes_pred, [tf.shape(bboxes_pred)], '%f_%f, shape of bboxes = '%(seg_th, link_th))
+                        # calculate true positive and false positive
+                        # the xs and ys from tfrecord is 0~1, resize them to absolute length before matching.
+                        num_gt_bboxes, tp, fp = tfe_bboxes.bboxes_matching(bboxes_pred, gxs, gys, gignored)
+                        tp_fp_metric = tfe_metrics.streaming_tp_fp_arrays(num_gt_bboxes, tp, fp)
+                        dict_metrics['tp_fp_%f_%f'%(config.seg_conf_threshold, config.link_conf_threshold)] = (tp_fp_metric[0], tp_fp_metric[1])
+                         
+                        # precision and recall
+                        precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
+                         
+                        fmean = tfe_metrics.fmean(precision, recall)
+                        fmean = util.tf.Print(fmean, data = [recall, precision, fmean], 
+                                                msg = eval_result_msg, 
+                                                file = eval_result_path, mode = 'a')
+                        fmean = tf.Print(fmean, [recall, precision, fmean], '%f_%f, Recall, Precision, Fmean = '%(seg_th, link_th))
+                        tf.summary.scalar('Precision', precision)
+                        tf.summary.scalar('Recall', recall)
+                        tf.summary.scalar('F-mean', fmean)
             
     names_to_values, names_to_updates = slim.metrics.aggregate_metric_map(dict_metrics)
 
@@ -197,8 +217,6 @@ def eval(dataset):
     elif FLAGS.gpu_memory_fraction > 0:
         sess_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction;
     
-    checkpoint_dir = util.io.get_dir(FLAGS.checkpoint_path)
-    logdir = util.io.join_path(checkpoint_dir, 'eval',  "%s_%s"%(FLAGS.dataset_name, FLAGS.dataset_split_name), util.io.get_filename(FLAGS.checkpoint_path))
     if util.io.is_dir(FLAGS.checkpoint_path):
         slim.evaluation.evaluation_loop(
             master = '',
@@ -211,7 +229,7 @@ def eval(dataset):
         slim.evaluation.evaluate_once(
             master = '',
             eval_op=list(names_to_updates.values()),
-            num_evals=dataset.num_samples,
+            num_evals=10,#dataset.num_samples,
             checkpoint_path = FLAGS.checkpoint_path,
             logdir = logdir,
             session_config=sess_config)
