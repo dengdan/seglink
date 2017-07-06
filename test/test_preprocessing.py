@@ -82,8 +82,8 @@ def main(_):
                     common_queue_min=10 * batch_size,
                     shuffle=True)
             # Get for SSD network: image, labels, bboxes.
-            [image, shape, glabels, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get(['image', 'shape',
-                                                             'object/label',
+            [image, shape, gignored, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get(['image', 'shape',
+                                                             'object/ignored',
                                                              'object/bbox', 
                                                              'object/oriented_bbox/x1',
                                                              'object/oriented_bbox/x2',
@@ -99,8 +99,8 @@ def main(_):
             image = tf.identity(image, 'input_image')
             # Pre-processing image, labels and bboxes.
             image_shape = (FLAGS.train_image_size, FLAGS.train_image_size)
-            image, glabels, gbboxes, gxs, gys = \
-                            ssd_vgg_preprocessing.preprocess_image(image, glabels, gbboxes, gxs, gys, 
+            image, gignored, gbboxes, gxs, gys = \
+                            ssd_vgg_preprocessing.preprocess_image(image, gignored, gbboxes, gxs, gys, 
                                                                out_shape=image_shape,
                                                                is_training = True)
             gxs = gxs * tf.cast(image_shape[1], gxs.dtype)
@@ -115,7 +115,7 @@ def main(_):
                 while i < 2:
                     i += 1
                     image_data, label_data, bbox_data, xs_data, ys_data, orbboxes = \
-                                 sess.run([image, glabels, gbboxes, gxs, gys, gorbboxes])
+                                 sess.run([image, gignored, gbboxes, gxs, gys, gorbboxes])
                     image_data = image_data + [123., 117., 104.]
                     image_data = np.asarray(image_data, np.uint8)
                     h, w = image_data.shape[0:-1]

@@ -59,8 +59,8 @@ tf.app.flags.DEFINE_string(
     'dataset_dir', None, 'The directory where the dataset files are stored.')
 tf.app.flags.DEFINE_string(
     'model_name', 'seglink_vgg', 'The name of the architecture to train.')
-tf.app.flags.DEFINE_integer('eval_image_width', 512, 'Train image size')
-tf.app.flags.DEFINE_integer('eval_image_height', 512, 'Train image size')
+tf.app.flags.DEFINE_integer('eval_image_width', 1280, 'Train image size')
+tf.app.flags.DEFINE_integer('eval_image_height', 768, 'Train image size')
 
 
 FLAGS = tf.app.flags.FLAGS
@@ -113,7 +113,8 @@ def read_dataset(dataset):
     image = tf.identity(image, 'input_image')
     
     # Pre-processing image, labels and bboxes.
-    image, gignored, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, gignored, gbboxes, gxs, gys, 
+    image, gignored, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(
+                                                       image, gignored, gbboxes, gxs, gys, 
                                                        out_shape = config.image_shape,
                                                        data_format = config.data_format, 
                                                        is_training = False)
@@ -163,7 +164,7 @@ def eval(dataset):
             gys = gys * tf.cast(shape[0], gys.dtype)
             if FLAGS.do_grid_search:
                 # grid search            
-                seg_ths = np.arange(0.1, 0.91, 0.1)
+                seg_ths = np.arange(0.3, 0.91, 0.1)
                 link_ths = seg_ths
                 for seg_th in seg_ths:
                     for link_th in link_ths:
@@ -182,7 +183,7 @@ def eval(dataset):
                             precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
                              
                             fmean = tfe_metrics.fmean(precision, recall)
-                            fmean = tf.Print(fmean, [precision, recall, fmean], '%f_%f, Precision, Recall, Fmean = '%(seg_th, link_th))
+                            fmean = tf.Print(fmean, [recall, precision, fmean], '%f_%f, Recall, Precision, Fmean = '%(seg_th, link_th))
                             tf.summary.scalar('Precision', precision)
                             tf.summary.scalar('Recall', recall)
                             tf.summary.scalar('F-mean', fmean)

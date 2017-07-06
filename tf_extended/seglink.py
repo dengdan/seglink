@@ -440,16 +440,16 @@ def cal_link_labels(labels):
     return link_gt
 
 # @util.dec.print_calling_in_short_for_tf
-def encode_seg_gt(seg_loc):
+def encode_seg_offsets(seg_locs):
     """
     Args:
-        seg_loc: a ndarray with shape = (N, 5). It contains the abolute values of segment locations 
+        seg_locs: a ndarray with shape = (N, 5). It contains the abolute values of segment locations 
     Return:
-        seg_gt, i.e., the offsets from default boxes. It is used as the final segment location ground truth.
+        seg_offsets, i.e., the offsets from default boxes. It is used as the final segment location ground truth.
     """
     anchors = config.default_anchors
     anchor_cx, anchor_cy, anchor_w, anchor_h = (anchors[:, idx] for idx in range(4))
-    seg_cx, seg_cy, seg_w, seg_h = (seg_loc[:, idx] for idx in range(4))
+    seg_cx, seg_cy, seg_w, seg_h = (seg_locs[:, idx] for idx in range(4))
     
     #encoding using the formulations from Euqation (2) to (6) of seglink paper
     #    seg_cx = anchor_cx + anchor_w * offset_cx
@@ -464,13 +464,13 @@ def encode_seg_gt(seg_loc):
     offset_h = np.log(seg_h * 1.0 / anchor_h)
     
     # prior scaling can be used to adjust the loss weight of loss on offset x, y, w, h, theta
-    seg_gt = np.zeros_like(seg_loc)
-    seg_gt[:, 0] = offset_cx / config.prior_scaling[0]
-    seg_gt[:, 1] = offset_cy / config.prior_scaling[1]
-    seg_gt[:, 2] = offset_w / config.prior_scaling[2]
-    seg_gt[:, 3] = offset_h / config.prior_scaling[3]
-    seg_gt[:, 4] = seg_loc[:, 4]  / config.prior_scaling[4]
-    return seg_gt
+    seg_offsets = np.zeros_like(seg_locs)
+    seg_offsets[:, 0] = offset_cx / config.prior_scaling[0]
+    seg_offsets[:, 1] = offset_cy / config.prior_scaling[1]
+    seg_offsets[:, 2] = offset_w / config.prior_scaling[2]
+    seg_offsets[:, 3] = offset_h / config.prior_scaling[3]
+    seg_offsets[:, 4] = seg_locs[:, 4]  / config.prior_scaling[4]
+    return seg_offsets
 
 def decode_seg_offsets_pred(seg_offsets_pred):
     anchors = config.default_anchors
@@ -508,7 +508,7 @@ def get_all_seglink_gt(xs, ys, ignored):
     anchors = config.default_anchors
     seg_labels, seg_locations = match_anchor_to_text_boxes_fast(anchors, xs, ys);
     link_labels = cal_link_labels(seg_labels)
-    seg_offsets = encode_seg_gt(seg_locations)
+    seg_offsets = encode_seg_offsets(seg_locations)
     
     
     # deal with ignored: use -2 to denotes ignored matchings temporarily
@@ -547,15 +547,18 @@ def get_all_seglink_gt(xs, ys, ignored):
     
 
 def tf_get_all_seglink_gt(xs, ys, ignored):
+    """
+    xs, ys: tensors reprensenting ground truth bbox, both with shape=(N, 4), values in 0~1
+    """
     h_I, w_I = config.image_shape
     
     xs = xs * w_I
     ys = ys * h_I    
-    labels, seg_gt, link_gt = tf.py_func(get_all_seglink_gt, [xs, ys, ignored], [tf.int32, tf.float32, tf.int32]);
-    labels.set_shape([config.num_anchors])
-    seg_gt.set_shape([config.num_anchors, 5])
-    link_gt.set_shape([config.num_links])
-    return labels, seg_gt, link_gt;
+    seg_labels, seg_offsets, link_labels = tf.py_func(get_all_seglink_gt, [xs, ys, ignored], [tf.int32, tf.float32, tf.int32]);
+    seg_labels.set_shape([config.num_anchors])
+    seg_offsets.set_shape([config.num_anchors, 5])
+    link_labels.set_shape([config.num_links])
+    return seg_labels, seg_offsets, link_labels;
 
 ############################################################################################################
 #                       linking segments together                                                          #
@@ -657,8 +660,8 @@ def group_segs(seg_scores, link_scores, seg_conf_threshold, link_conf_threshold)
 ############################################################################################################
 #                       combining segments to bboxes                                                       #
 ############################################################################################################
-def tf_seglink_to_bbox(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shape, seg_conf_threshold = None, link_conf_threshold = None):
-    
+def tf_seglink_to_bbox(seg_cls_pred, link_cls_pred, seg_offsets_pred, image_shape, 
+                       seg_conf_threshold = None, link_conf_threshold = None):
     if len(seg_cls_pred.shape) == 3:
         assert seg_cls_pred.shape[0] == 1 # only batch_size == 1 supported now TODO
         seg_cls_pred = seg_cls_pred[0, ...]
@@ -690,20 +693,19 @@ def seglink_to_bbox(seg_scores, link_scores, seg_offsets_pred,
     """
     seg_conf_threshold = seg_conf_threshold or config.seg_conf_threshold
     link_conf_threshold = link_conf_threshold or config.link_conf_threshold
-    
-    seg_groups = group_segs(seg_scores, link_scores, seg_conf_threshold, link_conf_threshold);
-    seg_locs = decode_seg_offsets_pred(seg_offsets_pred)
-    bboxes = []
     if image_shape is None:
         image_shape = config.image_shape
-        
+
+    seg_groups = group_segs(seg_scores, link_scores, seg_conf_threshold, link_conf_threshold);
+    seg_locs = decode_seg_offsets_pred(seg_offsets_pred)
+    
+    bboxes = []
+    ref_h, ref_w = config.image_shape
     for group in seg_groups:
         group = [seg_locs[idx, :] for idx in group]
         bbox = combine_segs(group)
-        
-        ref_h, ref_w = config.image_shape
         image_h, image_w = image_shape[0:2]
-        scale = [image_w * 1.0 / ref_w, image_h * 1.0 / ref_h, image_h * 1.0 / ref_h, image_w * 1.0 / ref_w, 1]
+        scale = [image_w * 1.0 / ref_w, image_h * 1.0 / ref_h, image_w * 1.0 / ref_w, image_h * 1.0 / ref_h, 1]
         bbox = np.asarray(bbox) * scale
         bboxes.append(bbox)
         

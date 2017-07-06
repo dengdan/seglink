@@ -54,9 +54,13 @@ def cvt_to_tfrecords(output_path , data_path, gt_path):
         
 if __name__ == "__main__":
     root_dir = util.io.get_absolute_path('~/dataset/ICDAR2015/Challenge4/')
-    training_data_dir = util.io.join_path(root_dir, 'ch4_training_images')
-    training_gt_dir = util.io.join_path(root_dir,'ch4_training_localization_transcription_gt')
-    
     output_dir = util.io.get_absolute_path('~/dataset/SSD-tf/ICDAR/')
     util.io.mkdir(output_dir);
-    cvt_to_tfrecords(output_path = util.io.join_path(output_dir, 'icdar2015_train.tfrecord'), data_path = training_data_dir, gt_path = training_gt_dir)
+
+#     training_data_dir = util.io.join_path(root_dir, 'ch4_training_images')
+#     training_gt_dir = util.io.join_path(root_dir,'ch4_training_localization_transcription_gt')
+#     cvt_to_tfrecords(output_path = util.io.join_path(output_dir, 'icdar2015_train.tfrecord'), data_path = training_data_dir, gt_path = training_gt_dir)
+
+    test_data_dir = util.io.join_path(root_dir, 'ch4_test_images')
+    test_gt_dir = util.io.join_path(root_dir,'ch4_test_localization_transcription_gt')
+    cvt_to_tfrecords(output_path = util.io.join_path(output_dir, 'icdar2015_test.tfrecord'), data_path = test_data_dir, gt_path = test_gt_dir)

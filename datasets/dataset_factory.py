@@ -16,7 +16,8 @@ icdar2013 = DatasetConfig(
 icdar2015 = DatasetConfig(
         file_pattern = 'icdar2015_%s.tfrecord', 
         split_sizes = {
-            'train': 1000
+            'train': 1000,
+            'test': 500
         }
 )
 
