@@ -87,7 +87,6 @@ def config_initialization():
     dataset = dataset_factory.get_dataset(FLAGS.dataset_name, FLAGS.dataset_split_name, FLAGS.dataset_dir)
     config.print_config(FLAGS, dataset, print_to_file = False)
     
-    
     return dataset
 
 def read_dataset(dataset):
@@ -130,13 +129,15 @@ def read_dataset(dataset):
 def eval(dataset):
     dict_metrics = {} 
     checkpoint_dir = util.io.get_dir(FLAGS.checkpoint_path)
-    logdir = util.io.join_path(checkpoint_dir, 'eval',  "%s_%s"%(FLAGS.dataset_name, FLAGS.dataset_split_name), util.io.get_filename(FLAGS.checkpoint_path))
-
+    logdir = util.io.join_path(checkpoint_dir, 
+                               'eval',  
+                               "%s_%s"%(FLAGS.dataset_name, FLAGS.dataset_split_name))
+    
+    global_step = slim.get_or_create_global_step()
     with tf.name_scope('evaluation_%dx%d'%(FLAGS.eval_image_height, FLAGS.eval_image_width)):
         with tf.variable_scope(tf.get_variable_scope(), reuse = True):# the variables has been created in config.init_config
             # get input tensor
             image, seg_label, seg_loc, link_gt, filename, shape, gignored, gxs, gys = read_dataset(dataset)
-            
             # expand dim if needed
             b_image =  tf.expand_dims(image, axis = 0);
             b_seg_label = tf.expand_dims(seg_label, axis = 0)
@@ -182,7 +183,7 @@ def eval(dataset):
                     
                     eval_result_msg = 'seg_conf_threshold=%f, link_conf_threshold = %f, '\
                                             %(config.seg_conf_threshold, config.link_conf_threshold)
-                    eval_result_msg += 'recall = %r, precision = %f, fmean = %r'
+                    eval_result_msg += 'iter = %r, recall = %r, precision = %f, fmean = %r'
                     
                     with tf.name_scope('seglink_conf_th_%f_%f'\
                                        %(config.seg_conf_threshold, config.link_conf_threshold)):
@@ -200,7 +201,7 @@ def eval(dataset):
                         precision, recall = tfe_metrics.precision_recall(*tp_fp_metric[0])
                          
                         fmean = tfe_metrics.fmean(precision, recall)
-                        fmean = util.tf.Print(fmean, data = [recall, precision, fmean], 
+                        fmean = util.tf.Print(fmean, data = [global_step, recall, precision, fmean], 
                                                 msg = eval_result_msg, 
                                                 file = eval_result_path, mode = 'a')
                         fmean = tf.Print(fmean, [recall, precision, fmean], '%f_%f, Recall, Precision, Fmean = '%(seg_th, link_th))
@@ -229,7 +230,7 @@ def eval(dataset):
         slim.evaluation.evaluate_once(
             master = '',
             eval_op=list(names_to_updates.values()),
-            num_evals=dataset.num_samples,
+            num_evals=2,#dataset.num_samples,
             checkpoint_path = FLAGS.checkpoint_path,
             logdir = logdir,
             session_config=sess_config)
