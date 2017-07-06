@@ -4,18 +4,11 @@ set -e
 # ./scripts/eval.sh 1 icdar2013 train 512 512 ckpt 
 
 export CUDA_VISIBLE_DEVICES=$1
-#DATASET=$2
-#SPLIT=$3
-#WIDTH=$4
-#HEIGHT=$5
-CHECKPOINT_PATH=$2
-
-DATASET=icdar2015
-SPLIT=test
-WIDTH=1280
-HEIGHT=768
-#CHECKPOINT_PATH=~/models/seglink/seglink_icdar2015_without_ignored/model.ckpt-72885
-#dataset
+DATASET=$2
+SPLIT=$3
+WIDTH=$4
+HEIGHT=$5
+CHECKPOINT_PATH=$6
 if [ $DATASET == 'synthtext' ]
 then
     DATA_PATH=SynthText
@@ -43,7 +36,7 @@ python eval_seglink.py \
 			--eval_image_width=${WIDTH} \
 			--eval_image_height=${HEIGHT} \
 			--gpu_memory_fraction=-1 \
-			--do_grid_search=0
+			--do_grid_search=$7
 
 			
 			

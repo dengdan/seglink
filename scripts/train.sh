@@ -5,10 +5,9 @@ export CUDA_VISIBLE_DEVICES=$1
 IMG_PER_GPU=$2
 DATASET=$3
 
-TRAIN_DIR=${HOME}/models/seglink/seglink_synthtext_512
-#TRAIN_DIR=${HOME}/models/seglink/seglink_icdar2015_without_ignored
-
-CHKPT_PATH=${HOME}/models/ssd-pretrain/seglink
+CHKPT_PATH=${HOME}/models/seglink/seglink_synthtext_512
+TRAIN_DIR=${HOME}/models/seglink/seglink_icdar2015_512
+#CHKPT_PATH=${HOME}/models/ssd-pretrain/seglink
 
 # get the number of gpus
 OLD_IFS="$IFS" 

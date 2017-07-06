@@ -157,7 +157,6 @@ def eval(dataset):
             
             # Add metrics to summaries.
             for name, metric in dict_metrics.items():
-                metric[0] = tf.Print(metric[0], [metric[0]], name)
                 tf.summary.scalar(name, metric[0])
             
             # shape = (height, width, channels) when format = NHWC TODO
@@ -165,7 +164,7 @@ def eval(dataset):
             gys = gys * tf.cast(shape[0], gys.dtype)
             if FLAGS.do_grid_search:
                 # grid search            
-                seg_ths = np.arange(0.3, 0.91, 0.1)
+                seg_ths = np.arange(0.5, 0.91, 0.1)
                 link_ths = seg_ths
                 for seg_th in seg_ths:
                     for link_th in link_ths:
