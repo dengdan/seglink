@@ -180,7 +180,7 @@ def eval(dataset):
                 for link_th in link_ths:
                     config._set_det_th(seg_th, link_th)
                     
-                    eval_result_msg = 'seg_conf_threshold=%f, link_conf_threshold = %f: '\
+                    eval_result_msg = 'seg_conf_threshold=%f, link_conf_threshold = %f, '\
                                             %(config.seg_conf_threshold, config.link_conf_threshold)
                     eval_result_msg += 'recall = %r, precision = %f, fmean = %r'
                     
@@ -229,7 +229,7 @@ def eval(dataset):
         slim.evaluation.evaluate_once(
             master = '',
             eval_op=list(names_to_updates.values()),
-            num_evals=10,#dataset.num_samples,
+            num_evals=dataset.num_samples,
             checkpoint_path = FLAGS.checkpoint_path,
             logdir = logdir,
             session_config=sess_config)
