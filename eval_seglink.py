@@ -151,12 +151,13 @@ def eval(dataset):
             assert len(losses) ==  3  # 3 is the number of seglink losses: seg_cls, seg_loc, link_cls
             for loss in tf.get_collection(tf.GraphKeys.LOSSES):
                 dict_metrics[loss.op.name] = slim.metrics.streaming_mean(loss)
-                
+            
             seglink_loss = tf.add_n(losses)
             dict_metrics['seglink_loss'] = slim.metrics.streaming_mean(seglink_loss)
             
             # Add metrics to summaries.
             for name, metric in dict_metrics.items():
+                metric[0] = tf.Print(metric[0], [metric[0]], name)
                 tf.summary.scalar(name, metric[0])
             
             # shape = (height, width, channels) when format = NHWC TODO
