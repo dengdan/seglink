@@ -44,7 +44,8 @@ tf.app.flags.DEFINE_string('checkpoint_exclude_scopes', None, 'checkpoint_exclud
 tf.app.flags.DEFINE_float('learning_rate', 0.001, 'learning rate.')
 tf.app.flags.DEFINE_float('momentum', 0.9, 'The momentum for the MomentumOptimizer')
 tf.app.flags.DEFINE_float('weight_decay', 0.0005, 'The weight decay on the model weights.')
-
+tf.app.flags.DEFINE_bool('using_moving_average', False, 'Whether to use ExponentionalMovingAverage')
+tf.app.flags.DEFINE_float('moving_average_decay', 0.9999, 'The decay rate of ExponentionalMovingAverage')
 
 # =========================================================================== #
 # I/O and preprocessing Flags.
@@ -219,7 +220,19 @@ def create_clones(batch_queue):
     averaged_gradients = sum_gradients(gradients)
     
     update_op = optimizer.apply_gradients(averaged_gradients, global_step=global_step)
-    train_op = control_flow_ops.with_dependencies([update_op], seglink_loss, name='train_op')
+    
+    train_ops = [update_op]
+    
+    # moving average
+    if FLAGS.using_moving_average:
+        tf.logging.info('using moving average in training, \
+        with decay = %f'%(FLAGS.moving_average_decay))
+        ema = tf.train.ExponentialMovingAverage(FLAGS.moving_average_decay)
+        ema_op = ema.apply(tf.trainable_variables())
+        with tf.control_dependencies([update_op]):# ema after updating
+            train_ops.append(tf.group(ema_op))
+            
+    train_op = control_flow_ops.with_dependencies(train_ops, seglink_loss, name='train_op')
     return train_op
 
     
@@ -240,7 +253,7 @@ def train(train_op):
             logdir = FLAGS.train_dir,
             init_fn = init_fn,
             summary_op = summary_op,
-            number_of_steps = FLAGS.max_number_of_steps,
+            number_of_steps = 100,#, FLAGS.max_number_of_steps,
             log_every_n_steps = FLAGS.log_every_n_steps,
             save_summaries_secs = 60,
             saver = saver,

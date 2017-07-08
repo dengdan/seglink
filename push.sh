@@ -1,4 +1,4 @@
 git add . --all
-git commit -m "add train without ignored gt."
+git commit -m "add moving average"
 git push -u origin master
 

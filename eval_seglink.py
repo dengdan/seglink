@@ -19,24 +19,35 @@ import config
 # model threshold parameters
 # =========================================================================== #
 tf.app.flags.DEFINE_string('train_with_ignored', False, 
-                           'whether to use ignored bbox (in ic15) in training.')
+       'whether to use ignored bbox (in ic15) in training.')
 tf.app.flags.DEFINE_boolean('do_grid_search', False, 
-                           'whether to do grid search to find a best combinations of seg_conf_threshold and link_conf_threshold.')
-tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0, 'the loss weight of segment localization')
-tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 'the loss weight of linkage classification loss')
+       'whether to do grid search to find a best combinations of \
+       seg_conf_threshold and link_conf_threshold.')
+tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0, 
+      'the loss weight of segment localization')
+tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 
+      'the loss weight of linkage classification loss')
 
 tf.app.flags.DEFINE_float('seg_conf_threshold', 0.9, 
-                          'the threshold on the confidence of segment')
+      'the threshold on the confidence of segment')
 tf.app.flags.DEFINE_float('link_conf_threshold', 0.7, 
-                          'the threshold on the confidence of linkage')
+      'the threshold on the confidence of linkage')
 
 
 # =========================================================================== #
 # Checkpoint and running Flags
 # =========================================================================== #
 tf.app.flags.DEFINE_string('checkpoint_path', None, 
-   'the path of checkpoint to be evaluated. If it is a directory containing many checkpoints, the lastest will be evaluated.')
-tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.1, 'the gpu memory fraction to be used. If less than 0, allow_growth = True is used.')
+   'the path of checkpoint to be evaluated. \
+   If it is a directory containing many checkpoints, \
+   the lastest will be evaluated.')
+tf.app.flags.DEFINE_float('gpu_memory_fraction', 0.1, 
+  'the gpu memory fraction to be used. \
+   If less than 0, allow_growth = True is used.')
+tf.app.flags.DEFINE_bool('using_moving_average', False, 
+   'Whether to use ExponentionalMovingAverage')
+tf.app.flags.DEFINE_float('moving_average_decay', 0.9999, 
+    'The decay rate of ExponentionalMovingAverage')
 
 # =========================================================================== #
 # I/O and preprocessing Flags.
@@ -218,11 +229,22 @@ def eval(dataset):
     elif FLAGS.gpu_memory_fraction > 0:
         sess_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction;
     
+    # Variables to restore: moving avg. or normal weights.
+    if FLAGS.using_moving_average:
+        variable_averages = tf.train.ExponentialMovingAverage(
+                FLAGS.moving_average_decay)
+        variables_to_restore = variable_averages.variables_to_restore(
+                slim.get_model_variables())
+        variables_to_restore[global_step.op.name] = global_step
+    else:
+        variables_to_restore = slim.get_variables_to_restore()
+
     if util.io.is_dir(FLAGS.checkpoint_path):
         slim.evaluation.evaluation_loop(
             master = '',
             eval_op=list(names_to_updates.values()),
             num_evals=dataset.num_samples,
+            variables_to_restore=variables_to_restore,
             checkpoint_dir = checkpoint_dir,
             logdir = logdir,
             session_config=sess_config)
@@ -230,6 +252,7 @@ def eval(dataset):
         slim.evaluation.evaluate_once(
             master = '',
             eval_op=list(names_to_updates.values()),
+            variables_to_restore=variables_to_restore,
             num_evals=2,#dataset.num_samples,
             checkpoint_path = FLAGS.checkpoint_path,
             logdir = logdir,
