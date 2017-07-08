@@ -80,6 +80,7 @@ def write_result(image_name, image_data, bboxes, path):
 
   
 def test():
+    
     with tf.name_scope('test'):
         seg_conf_threshold = tf.placeholder(dtype = tf.float32, shape = [])
         link_conf_threshold = tf.placeholder(dtype = tf.float32, shape = [])
@@ -109,18 +110,8 @@ def test():
     
     checkpoint_dir = util.io.get_dir(FLAGS.checkpoint_path)
     logdir = util.io.join_path(checkpoint_dir, 'test', FLAGS.dataset_name + '_' +FLAGS.dataset_split_name)
-
-    # Variables to restore: moving avg. or normal weights.
-    if FLAGS.using_moving_average:
-        variable_averages = tf.train.ExponentialMovingAverage(
-                FLAGS.moving_average_decay)
-        variables_to_restore = variable_averages.variables_to_restore(
-                slim.get_model_variables())
-        variables_to_restore[global_step.op.name] = global_step
-    else:
-        variables_to_restore = slim.get_variables_to_restore()
     
-    saver = tf.train.Saver(var_list = variables_to_restore)
+    saver = tf.train.Saver()
     
     def run(checkpoint):
         with tf.Session(config = sess_config) as sess:
@@ -174,12 +165,8 @@ def test():
                     print util.cmd.cmd(cmd)
             
             
-    if util.io.is_dir(FLAGS.checkpoint_path):
-        for checkpoint in evaluation.checkpoints_iterator(checkpoint_dir):
-            tf.logging.info('testing', checkpoint)
-            run(checkpoint)
-    else:
-        checkpoint = FLAGS.checkpoint_path
+    for checkpoint in util.tf.get_all_ckpts(checkpoint_dir):
+        tf.logging.info('testing', checkpoint)
         run(checkpoint)
 
 def main(_):
