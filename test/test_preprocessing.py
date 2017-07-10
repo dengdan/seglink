@@ -37,17 +37,20 @@ tf.app.flags.DEFINE_integer(
 # Dataset Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_string(
-    'dataset_name', 'synthtext', 'The name of the dataset to load.')
+    'dataset_name', 'icdar2013', 'The name of the dataset to load.')
 tf.app.flags.DEFINE_string(
     'dataset_split_name', 'train', 'The name of the train/test split.')
 tf.app.flags.DEFINE_string(
-    'dataset_dir', '~/dataset/SSD-tf/SynthText', 'The directory where the dataset files are stored.')
+    'dataset_dir', '~/dataset/SSD-tf/ICDAR', 'The directory where the dataset files are stored.')
 tf.app.flags.DEFINE_string(
     'model_name', 'ssd_vgg', 'The name of the architecture to train.')
 tf.app.flags.DEFINE_integer(
     'batch_size', 2, 'The number of samples in each batch.')
 tf.app.flags.DEFINE_integer(
-    'train_image_size', 512, 'Train image size')
+    'train_image_width', 384, 'Train image width for training')
+tf.app.flags.DEFINE_integer(
+    'train_image_height', 384, 'Train image height for training')
+
 tf.app.flags.DEFINE_integer('max_number_of_steps', None,
                             'The maximum number of training steps.')
 
@@ -80,7 +83,7 @@ def main(_):
                     num_readers=FLAGS.num_readers,
                     common_queue_capacity=20 * batch_size,
                     common_queue_min=10 * batch_size,
-                    shuffle=True)
+                    shuffle=False)
             # Get for SSD network: image, labels, bboxes.
             [image, shape, gignored, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get(['image', 'shape',
                                                              'object/ignored',
@@ -98,13 +101,13 @@ def main(_):
             gys = tf.transpose(tf.stack([y1, y2, y3, y4]))
             image = tf.identity(image, 'input_image')
             # Pre-processing image, labels and bboxes.
-            image_shape = (FLAGS.train_image_size, FLAGS.train_image_size)
+            image_shape = (FLAGS.train_image_height, FLAGS.train_image_width)
             image, gignored, gbboxes, gxs, gys = \
                             ssd_vgg_preprocessing.preprocess_image(image, gignored, gbboxes, gxs, gys, 
                                                                out_shape=image_shape,
                                                                is_training = True)
-            gxs = gxs * tf.cast(image_shape[1], gxs.dtype)
-            gys = gys * tf.cast(image_shape[0], gys.dtype)
+            gxs = gxs * tf.cast(tf.shape(image)[1], gxs.dtype)
+            gys = gys * tf.cast(tf.shape(image)[0], gys.dtype)
             gorbboxes = tfe_seglink.tf_min_area_rect(gxs, gys)
             image = tf.identity(image, 'processed_image')
             
@@ -112,9 +115,9 @@ def main(_):
                 coord = tf.train.Coordinator()
                 threads = tf.train.start_queue_runners(sess=sess, coord=coord)
                 i = 0
-                while i < 2:
+                while i < 20:
                     i += 1
-                    image_data, label_data, bbox_data, xs_data, ys_data, orbboxes = \
+                    image_data, ignored_data, bbox_data, xs_data, ys_data, orbboxes = \
                                  sess.run([image, gignored, gbboxes, gxs, gys, gorbboxes])
                     image_data = image_data + [123., 117., 104.]
                     image_data = np.asarray(image_data, np.uint8)
@@ -123,7 +126,9 @@ def main(_):
                     I_bbox = image_data.copy()
                     I_xys = image_data.copy()
                     I_orbbox = image_data.copy()
-                    
+#                     if i == 2:
+#                         import pdb
+#                         pdb.set_trace()
                     for idx in range(bbox_data.shape[0]):
                         
                         def draw_bbox():
@@ -131,9 +136,14 @@ def main(_):
                             util.img.rectangle(I_bbox, (x1, y1), (x2, y2), color = util.img.COLOR_WHITE)
                         
                         def draw_xys():
+                            ignored = ignored_data[idx]
+                            if ignored:
+                                color = util.img.COLOR_WHITE
+                            else:
+                                color = util.img.COLOR_GREEN
                             points = zip(xs_data[idx, :], ys_data[idx, :])
                             cnts = util.img.points_to_contours(points);
-                            util.img.draw_contours(I_xys, cnts, -1, color = util.img.COLOR_GREEN)
+                            util.img.draw_contours(I_xys, cnts, -1, color = color)
 
                         def draw_orbbox():
                             orbox = orbboxes[idx, :]
@@ -146,7 +156,6 @@ def main(_):
                         draw_bbox()
                         draw_xys();
                         draw_orbbox();
-                        
                     print util.sit(I_bbox)
                     print util.sit(I_xys)
                     print util.sit(I_orbbox)

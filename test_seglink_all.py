@@ -165,7 +165,7 @@ def test():
                     print util.cmd.cmd(cmd)
             
             
-    for checkpoint in util.tf.get_all_ckpts(checkpoint_dir):
+    for checkpoint in util.tf.get_all_ckpts(checkpoint_dir)[::-1]:
         tf.logging.info('testing', checkpoint)
         run(checkpoint)
 

@@ -64,8 +64,7 @@ def bboxes_resize(bbox_ref, bboxes, xs, ys, name=None):
 #         bboxes = tf.boolean_mask(bboxes, mask)
 #         return labels, bboxes
 
-
-def bboxes_filter_overlap(labels, bboxes,xs, ys, threshold, scope=None, assign_negative = False):
+def bboxes_filter_overlap(labels, bboxes,xs, ys, threshold, scope=None, assign_value = None):
     """Filter out bounding boxes based on (relative )overlap with reference
     box [0, 0, 1, 1].  Remove completely bounding boxes, or assign negative
     labels to the one outside (useful for latter processing...).
@@ -75,10 +74,10 @@ def bboxes_filter_overlap(labels, bboxes,xs, ys, threshold, scope=None, assign_n
     """
     with tf.name_scope(scope, 'bboxes_filter', [labels, bboxes]):
         scores = bboxes_intersection(tf.constant([0, 0, 1, 1], bboxes.dtype),bboxes)
-                    
+        
         mask = scores > threshold
-        if assign_negative:
-            labels = tf.where(mask, labels, -labels)
+        if assign_value is not None:
+            labels = tf.where(mask, labels, tf.ones_like(labels) * assign_value)
         else:
             labels = tf.boolean_mask(labels, mask)
             bboxes = tf.boolean_mask(bboxes, mask)

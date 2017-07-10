@@ -21,7 +21,8 @@ import tensorflow as tf
 import tf_extended as tfe
 
 from tensorflow.python.ops import control_flow_ops
-
+import cv2
+import util
 from preprocessing import tf_image
 
 slim = tf.contrib.slim
@@ -38,12 +39,14 @@ _G_MEAN = 117.
 _B_MEAN = 104.
 
 # Some training pre-processing parameters.
-BBOX_CROP_OVERLAP = 0.1         # Minimum overlap to keep a bbox after cropping.
+BBOX_CROP_OVERLAP = 0.2         # Minimum overlap to keep a bbox after cropping.
 MIN_OBJECT_COVERED = 0.5
 CROP_ASPECT_RATIO_RANGE = (0.5, 2.)  # Distortion ratio during cropping.
 EVAL_SIZE = (300, 300)
 AREA_RANGE = [0.1, 1]
 FLIP = False
+USING_ROTATION = False
+LABEL_IGNORE = 1
 
 def tf_image_whitened(image, means=[_R_MEAN, _G_MEAN, _B_MEAN]):
     """Subtracts the given means from each image channel.
@@ -227,10 +230,46 @@ def distorted_bounding_box_crop(image,
         # Update bounding boxes: resize and filter out.
         bboxes, xs, ys = tfe.bboxes_resize(distort_bbox, bboxes, xs, ys)
         labels, bboxes, xs, ys = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
-                                                threshold=BBOX_CROP_OVERLAP, assign_negative = False)
+                                                threshold=BBOX_CROP_OVERLAP, assign_value = LABEL_IGNORE)
         return cropped_image, labels, bboxes, xs, ys, distort_bbox
 
+def tf_rotate_image(image, xs, ys):
+    image, bboxes, xs, ys = tf.py_func(rotate_image, [image, xs, ys], [tf.uint8, tf.float32, tf.float32, tf.float32])
+    image.set_shape([None, None, 3])
+    bboxes.set_shape([None, 4])
+    xs.set_shape([None, 4])
+    ys.set_shape([None, 4])
+    return image, bboxes, xs, ys
 
+def rotate_image(image, xs, ys):
+    rotation_angle = np.random.randint(low = -90, high = 90);
+    h, w = image.shape[0:2]
+    # rotate image
+    image, M = util.img.rotate_about_center(image, rotation_angle, scale = 1)
+    
+    nh, nw = image.shape[0:2]
+    
+    # rotate bboxes
+    xs = xs * w
+    ys = ys * h
+    def rotate_xys(xs, ys):
+        xs = np.reshape(xs, -1)
+        ys = np.reshape(ys, -1)
+        xs, ys = np.dot(M, np.transpose([xs, ys, 1]))
+        xs = np.reshape(xs, (-1, 4))
+        ys = np.reshape(ys, (-1, 4))
+        return xs, ys
+    xs, ys = rotate_xys(xs, ys)
+    xs = xs * 1.0 / nw
+    ys = ys * 1.0 / nh
+    xmin = np.min(xs, axis = 1)
+    xmax = np.max(xs, axis = 1)
+    ymin = np.min(ys, axis = 1)
+    ymax = np.max(ys, axis = 1)
+    bboxes = np.transpose(np.asarray([ymin, xmin, ymax, xmax]))
+    image = np.asarray(image, np.uint8)
+    return image, bboxes, xs, ys
+ 
 def preprocess_for_train(image, labels, bboxes, xs, ys,
                          out_shape, data_format='NHWC',
                          scope='ssd_preprocessing_train'):
@@ -255,11 +294,15 @@ def preprocess_for_train(image, labels, bboxes, xs, ys,
     with tf.name_scope(scope, 'ssd_preprocessing_train', [image, labels, bboxes]):
         if image.get_shape().ndims != 3:
             raise ValueError('Input must be of size [height, width, C>0]')
+        
+        # rotate image
+        if USING_ROTATION:
+            image, bboxes, xs, ys = tf_rotate_image(image, xs, ys)
+        
         # Convert to float scaled [0, 1].
         if image.dtype != tf.float32:
             image = tf.image.convert_image_dtype(image, dtype=tf.float32)
 #         tf_summary_image(image, bboxes, 'image_with_bboxes')
-
 
         # Distort image and bounding boxes.
         dst_image = image
