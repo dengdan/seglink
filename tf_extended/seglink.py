@@ -52,7 +52,9 @@ def min_area_rect(xs, ys):
     return box
 
 def tf_min_area_rect(xs, ys):
-    return tf.py_func(min_area_rect, [xs, ys], xs.dtype)
+    rects = tf.py_func(min_area_rect, [xs, ys], xs.dtype)
+    rects.set_shape([None, 5])
+    return rects
 
 def transform_cv_rect(rects):
     """Transform the rects from opencv method minAreaRect to our rects. 

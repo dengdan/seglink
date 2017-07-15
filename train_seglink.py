@@ -51,11 +51,12 @@ tf.app.flags.DEFINE_float('moving_average_decay', 0.9999, 'The decay rate of Exp
 # I/O and preprocessing Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_integer(
-    'num_readers', 1,
+    'num_readers', 8,
     'The number of parallel readers that read data from the dataset.')
 tf.app.flags.DEFINE_integer(
-    'num_preprocessing_threads', 1,
+    'num_preprocessing_threads', 4,
     'The number of threads used to create the batches.')
+tf.app.flags.DEFINE_bool('preprocessing_use_rotation', False, 'Whether to use rotation for data augmentation')
 
 # =========================================================================== #
 # Dataset Flags.
@@ -91,6 +92,7 @@ def config_initialization():
                        train_with_ignored = FLAGS.train_with_ignored,
                        seg_loc_loss_weight = FLAGS.seg_loc_loss_weight, 
                        link_cls_loss_weight = FLAGS.link_cls_loss_weight, 
+                       preprocessing_use_rotation = FLAGS.preprocessing_use_rotation
                        )
 
     batch_size = config.batch_size
@@ -111,8 +113,8 @@ def create_dataset_batch_queue(dataset):
             provider = slim.dataset_data_provider.DatasetDataProvider(
                 dataset,
                 num_readers=FLAGS.num_readers,
-                common_queue_capacity=50 * config.batch_size,
-                common_queue_min=30 * config.batch_size,
+                common_queue_capacity=200 * config.batch_size,
+                common_queue_min=150 * config.batch_size,
                 shuffle=True)
         # Get for SSD network: image, labels, bboxes.
         [image, gignored, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get([
@@ -136,6 +138,7 @@ def create_dataset_batch_queue(dataset):
         image, gignored, gbboxes, gxs, gys = ssd_vgg_preprocessing.preprocess_image(image, gignored, gbboxes, gxs, gys, 
                                                            out_shape = config.image_shape,
                                                            data_format = config.data_format, 
+                                                           use_rotation = config.use_rotation,
                                                            is_training = True)
         image = tf.identity(image, 'processed_image')
         

@@ -6,6 +6,7 @@ import tensorflow as tf
 slim = tf.contrib.slim
 import util
 
+global use_rotation
 
 global feat_shapes
 global image_shape
@@ -89,8 +90,10 @@ def init_config(image_shape, batch_size = 1,
                 seg_loc_loss_weight = 1.0,
                 link_cls_loss_weight = 1.0,
                 seg_conf_threshold = 0.5,
-                link_conf_threshold = 0.5):
-
+                link_conf_threshold = 0.5,
+                preprocessing_use_rotation = False):
+    global use_rotation
+    use_rotation = preprocessing_use_rotation
     _set_det_th(seg_conf_threshold, link_conf_threshold)
     _set_loss_weight(seg_loc_loss_weight, link_cls_loss_weight)
     _set_train_with_ignored(train_with_ignored)

@@ -36,7 +36,7 @@ def cvt_to_tfrecords(output_path , data_path, gt_path):
                 bbox = [int(gt[i]) for i in range(4)];
                 xmin, ymin, xmax, ymax  = np.asarray(bbox) / [w, h, w, h];
                 oriented_bboxes.append([xmin, ymin, xmax, ymin, xmax, ymax, xmin, ymax]);
-                bboxes.append([xmin, ymin, xmax, ymax])
+                bboxes.append([xmin, ymin, xmax, ymax])z
                 ignored.append(0);
                 labels_text.append(line.split('"')[1]);
                 labels.append(1);

@@ -39,14 +39,20 @@ _G_MEAN = 117.
 _B_MEAN = 104.
 
 # Some training pre-processing parameters.
-BBOX_CROP_OVERLAP = 0.2         # Minimum overlap to keep a bbox after cropping.
-MIN_OBJECT_COVERED = 0.5
+BBOX_CROP_OVERLAP = 0.6         # Minimum overlap to keep a bbox after cropping.
+MIN_OBJECT_COVERED = 0.8
 CROP_ASPECT_RATIO_RANGE = (0.5, 2.)  # Distortion ratio during cropping.
 EVAL_SIZE = (300, 300)
 AREA_RANGE = [0.1, 1]
 FLIP = False
-USING_ROTATION = False
 LABEL_IGNORE = 1
+USING_SHORTER_SIDE_FILTERING=True
+MAX_ROTATION_SCLAE = 2
+MIN_ROTATION_SCLAE = 0.25
+
+
+MIN_SHORTER_SIDE = 12
+MAX_SHORTER_SIDE = np.infty
 
 def tf_image_whitened(image, means=[_R_MEAN, _G_MEAN, _B_MEAN]):
     """Subtracts the given means from each image channel.
@@ -230,8 +236,9 @@ def distorted_bounding_box_crop(image,
         # Update bounding boxes: resize and filter out.
         bboxes, xs, ys = tfe.bboxes_resize(distort_bbox, bboxes, xs, ys)
         labels, bboxes, xs, ys = tfe.bboxes_filter_overlap(labels, bboxes, xs, ys, 
-                                                threshold=BBOX_CROP_OVERLAP, assign_value = LABEL_IGNORE)
+                    threshold=BBOX_CROP_OVERLAP, assign_value = LABEL_IGNORE)
         return cropped_image, labels, bboxes, xs, ys, distort_bbox
+
 
 def tf_rotate_image(image, xs, ys):
     image, bboxes, xs, ys = tf.py_func(rotate_image, [image, xs, ys], [tf.uint8, tf.float32, tf.float32, tf.float32])
@@ -241,11 +248,14 @@ def tf_rotate_image(image, xs, ys):
     ys.set_shape([None, 4])
     return image, bboxes, xs, ys
 
+
+
 def rotate_image(image, xs, ys):
     rotation_angle = np.random.randint(low = -90, high = 90);
+    scale = np.random.uniform(low = MIN_ROTATION_SCLAE, high = MAX_ROTATION_SCLAE)
     h, w = image.shape[0:2]
     # rotate image
-    image, M = util.img.rotate_about_center(image, rotation_angle, scale = 1)
+    image, M = util.img.rotate_about_center(image, rotation_angle, scale = scale)
     
     nh, nw = image.shape[0:2]
     
@@ -263,16 +273,25 @@ def rotate_image(image, xs, ys):
     xs = xs * 1.0 / nw
     ys = ys * 1.0 / nh
     xmin = np.min(xs, axis = 1)
+    xmin[np.where(xmin < 0)] = 0    
+    
     xmax = np.max(xs, axis = 1)
+    xmax[np.where(xmax > 1)] = 1
+    
     ymin = np.min(ys, axis = 1)
+    ymin[np.where(ymin < 0)] = 0
+    
     ymax = np.max(ys, axis = 1)
+    ymax[np.where(ymax > 1)] = 1
+    
     bboxes = np.transpose(np.asarray([ymin, xmin, ymax, xmax]))
     image = np.asarray(image, np.uint8)
     return image, bboxes, xs, ys
  
 def preprocess_for_train(image, labels, bboxes, xs, ys,
                          out_shape, data_format='NHWC',
-                         scope='ssd_preprocessing_train'):
+                         scope='ssd_preprocessing_train',
+                         use_rotation = False):
     """Preprocesses the given image for training.
 
     Note that the actual resizing scale is sampled from
@@ -296,7 +315,7 @@ def preprocess_for_train(image, labels, bboxes, xs, ys,
             raise ValueError('Input must be of size [height, width, C>0]')
         
         # rotate image
-        if USING_ROTATION:
+        if use_rotation:
             image, bboxes, xs, ys = tf_rotate_image(image, xs, ys)
         
         # Convert to float scaled [0, 1].
@@ -318,10 +337,16 @@ def preprocess_for_train(image, labels, bboxes, xs, ys,
                                           align_corners=False)
         tf_summary_image(dst_image, bboxes, 'image_shape_distorted')
 
-        # Randomly flip the image horizontally.
-        if FLIP:
-            dst_image, bboxes = tf_image.random_flip_left_right(dst_image, bboxes)
-
+        # Filter bboxes using the length of shorter sides
+        if USING_SHORTER_SIDE_FILTERING:
+             xs = xs * out_shape[1]
+             ys = ys * out_shape[0]
+             labels, bboxes, xs, ys = tfe.bboxes_filter_by_shorter_side(labels, 
+                bboxes, xs, ys, 
+                min_height = MIN_SHORTER_SIDE, max_height = MAX_SHORTER_SIDE, 
+                assign_value = LABEL_IGNORE)
+             xs = xs / out_shape[1]
+             ys = ys / out_shape[0]
         # Randomly distort the colors. There are 4 ways to do it.
         dst_image = apply_with_random_selector(
                 dst_image,
@@ -379,6 +404,7 @@ def preprocess_image(image,
                      out_shape,
                      data_format = 'NHWC',
                      is_training=False,
+                     use_rotation = False,
                      **kwargs):
     """Pre-process an given image.
 
@@ -402,7 +428,7 @@ def preprocess_image(image,
     if is_training:
         return preprocess_for_train(image, labels, bboxes, xs, ys,
                                     out_shape=out_shape,
-                                    data_format=data_format)
+                                    data_format=data_format, use_rotation = use_rotation)
     else:
         return preprocess_for_eval(image, labels, bboxes, xs, ys,
                                    out_shape=out_shape,

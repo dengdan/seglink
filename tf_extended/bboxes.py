@@ -17,7 +17,7 @@ import cv2
 import util
 import config
 from tf_extended import math as tfe_math
-
+from tf_extended import seglink
 def bboxes_resize(bbox_ref, bboxes, xs, ys, name=None):
     """Resize bounding boxes based on a reference bounding box,
     assuming that the latter is [0, 0, 1, 1] after transform. Useful for
@@ -72,7 +72,7 @@ def bboxes_filter_overlap(labels, bboxes,xs, ys, threshold, scope=None, assign_v
     Return:
       labels, bboxes: Filtered (or newly assigned) elements.
     """
-    with tf.name_scope(scope, 'bboxes_filter', [labels, bboxes]):
+    with tf.name_scope(scope, 'bboxes_filter_overlap', [labels, bboxes]):
         scores = bboxes_intersection(tf.constant([0, 0, 1, 1], bboxes.dtype),bboxes)
         
         mask = scores > threshold
@@ -87,6 +87,24 @@ def bboxes_filter_overlap(labels, bboxes,xs, ys, threshold, scope=None, assign_v
         return labels, bboxes, xs, ys
 
 
+def bboxes_filter_by_shorter_side(labels, bboxes, xs, ys, min_height = 16, max_height = 32, assign_value = None):
+    """
+    Filtering bboxes by the length of shorter side 
+    """
+    with tf.name_scope('bboxes_filter_by_shorter_side', [labels, bboxes]):
+        bbox_rects = seglink.tf_min_area_rect(xs, ys)
+        ws, hs = bbox_rects[:, 2], bbox_rects[:, 3]
+        shorter_sides = tf.minimum(ws, hs)
+        mask = tf.logical_and(shorter_sides >= min_height, shorter_sides <= max_height)
+        if assign_value is not None:
+            labels = tf.where(mask, labels, tf.ones_like(labels) * assign_value)
+        else:
+            labels = tf.boolean_mask(labels, mask)
+            bboxes = tf.boolean_mask(bboxes, mask)
+            xs = tf.boolean_mask(xs, mask);
+            ys = tf.boolean_mask(ys, mask);
+        return labels, bboxes, xs, ys
+    
 def bboxes_intersection(bbox_ref, bboxes, name=None):
     """Compute relative intersection between a reference box and a
     collection of bounding boxes. Namely, compute the quotient between
@@ -114,33 +132,6 @@ def bboxes_intersection(bbox_ref, bboxes, name=None):
         bboxes_vol = (bboxes[2] - bboxes[0]) * (bboxes[3] - bboxes[1])
         scores = tfe_math.safe_divide(inter_vol, bboxes_vol, 'intersection')
         return scores
-
-
-# def bboxes_matching_batch(bboxes, gxs, gys, gignored, matching_threshold=0.5, scope=None):
-#     """Matching a collection of detected boxes with groundtruth values.
-#     Batched-inputs version.
-# 
-#     Args:
-#       rbboxes: BxN(x4) Tensors. Detected objects;
-#       gbboxes: Groundtruth bounding boxes
-#       matching_threshold: Threshold for a positive match.
-#     Return: Tuple or Dictionaries with:
-#        n_gbboxes: Scalar Tensor with number of groundtruth boxes (may difer from size because of zero padding).
-#        tp: (B, N)-shaped boolean Tensor containing with True Positives.
-#        fp: (B, N)-shaped boolean Tensor containing with False Positives.
-#     """
-#     # Dictionaries as inputs.
-# 
-#     with tf.name_scope(scope, 'bboxes_matching_batch', [bboxes, gxs, gys, gignored]):
-#         r = tf.map_fn(lambda x: 
-#                       bboxes_matching(x[0], x[1], x[2], x[3], matching_threshold),
-#                       (bboxes, gxs, gys, gignored),
-#                       dtype=(tf.int64, tf.bool, tf.bool),
-#                       parallel_iterations=10,
-#                       back_prop=False,
-#                       swap_memory=True,
-#                       infer_shape=True)
-#         return r[0], r[1], r[2]
 
 
 def bboxes_matching(bboxes, gxs, gys, gignored, matching_threshold = 0.5, scope=None):

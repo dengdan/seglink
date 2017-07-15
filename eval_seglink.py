@@ -28,9 +28,9 @@ tf.app.flags.DEFINE_float('seg_loc_loss_weight', 1.0,
 tf.app.flags.DEFINE_float('link_cls_loss_weight', 1.0, 
       'the loss weight of linkage classification loss')
 
-tf.app.flags.DEFINE_float('seg_conf_threshold', 0.9, 
+tf.app.flags.DEFINE_float('seg_conf_threshold', 0.8, 
       'the threshold on the confidence of segment')
-tf.app.flags.DEFINE_float('link_conf_threshold', 0.7, 
+tf.app.flags.DEFINE_float('link_conf_threshold', 0.5, 
       'the threshold on the confidence of linkage')
 
 
@@ -187,7 +187,7 @@ def eval(dataset):
                 seg_ths = [FLAGS.seg_conf_threshold]
                 link_ths = [FLAGS.link_conf_threshold]
             
-            eval_result_path = util.io.join_path(logdir, 'eval_on_%s_%s.log'%(FLAGS.dataset_name, FLAGS.dataset_split_name))
+            eval_result_path = util.io.join_path(logdir, 'eval_on_%s_%s.csv'%(FLAGS.dataset_name, FLAGS.dataset_split_name))
             for seg_th in seg_ths:
                 for link_th in link_ths:
                     config._set_det_th(seg_th, link_th)

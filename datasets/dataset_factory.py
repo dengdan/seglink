@@ -29,7 +29,8 @@ scut = DatasetConfig(
 )
 
 synthtext = DatasetConfig(
-    file_pattern = 'SynthText_*.tfrecord',
+    file_pattern = '*.tfrecord',
+#     file_pattern = 'SynthText_*.tfrecord',
     split_sizes = {
         'train': 858750
     }

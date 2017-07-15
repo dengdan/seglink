@@ -83,4 +83,9 @@ def precision_recall(num_gbboxes, tp, fp, scope=None):
 def fmean(pre, rec):
     """Compute f-mean with precision and recall
     """
-    return 2 * pre * rec / (pre + rec)
+    def zero():
+        return tf.zeros([])
+    def not_zero():
+        return 2 * pre * rec / (pre + rec)
+    
+    return tf.cond(pre + rec > 0, not_zero, zero)

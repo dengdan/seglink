@@ -37,7 +37,7 @@ tf.app.flags.DEFINE_integer(
 # Dataset Flags.
 # =========================================================================== #
 tf.app.flags.DEFINE_string(
-    'dataset_name', 'icdar2013', 'The name of the dataset to load.')
+    'dataset_name', 'icdar2015', 'The name of the dataset to load.')
 tf.app.flags.DEFINE_string(
     'dataset_split_name', 'train', 'The name of the train/test split.')
 tf.app.flags.DEFINE_string(
@@ -47,9 +47,9 @@ tf.app.flags.DEFINE_string(
 tf.app.flags.DEFINE_integer(
     'batch_size', 2, 'The number of samples in each batch.')
 tf.app.flags.DEFINE_integer(
-    'train_image_width', 384, 'Train image width for training')
+    'train_image_width', 512, 'Train image width for training')
 tf.app.flags.DEFINE_integer(
-    'train_image_height', 384, 'Train image height for training')
+    'train_image_height', 512, 'Train image height for training')
 
 tf.app.flags.DEFINE_integer('max_number_of_steps', None,
                             'The maximum number of training steps.')
@@ -83,7 +83,7 @@ def main(_):
                     num_readers=FLAGS.num_readers,
                     common_queue_capacity=20 * batch_size,
                     common_queue_min=10 * batch_size,
-                    shuffle=False)
+                    shuffle=True)
             # Get for SSD network: image, labels, bboxes.
             [image, shape, gignored, gbboxes, x1, x2, x3, x4, y1, y2, y3, y4] = provider.get(['image', 'shape',
                                                              'object/ignored',
@@ -115,7 +115,7 @@ def main(_):
                 coord = tf.train.Coordinator()
                 threads = tf.train.start_queue_runners(sess=sess, coord=coord)
                 i = 0
-                while i < 20:
+                while i < 50:
                     i += 1
                     image_data, ignored_data, bbox_data, xs_data, ys_data, orbboxes = \
                                  sess.run([image, gignored, gbboxes, gxs, gys, gorbboxes])
@@ -156,9 +156,9 @@ def main(_):
                         draw_bbox()
                         draw_xys();
                         draw_orbbox();
-                    print util.sit(I_bbox)
+#                     print util.sit(I_bbox)
                     print util.sit(I_xys)
-                    print util.sit(I_orbbox)
+#                     print util.sit(I_orbbox)
                     print 'check the images and make sure that bboxes in difference colors are the same.'
                 coord.request_stop()
                 coord.join(threads)
