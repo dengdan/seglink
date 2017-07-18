@@ -156,8 +156,9 @@ Thanks should be given to the authors of the Seglink paper, i.e., Baoguang Shi1 
 
 
 
-I am still trying to modify and train a better seglink model.
+I am still trying to modify and train a better seglink model. 
 
+Contact me if you have any problems, on github or through my emal:1034565376@qq.com
 
 
 
