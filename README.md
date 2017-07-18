@@ -138,7 +138,7 @@ The training processing requires data processing, e.g. converting data into tfre
 
 
 
-# My Comment
+# Some Comments
 
 Thanks should be given to the authors of the Seglink paper, i.e., Baoguang Shi1 Xiang Bai1, Serge Belongie.
 
@@ -157,7 +157,7 @@ Thanks should be given to the authors of the Seglink paper, i.e., Baoguang Shi1 
 
 I am still trying to modify and train a better seglink model. 
 
-Sorry for the imcomplete documentation, contact me if you have any problems, on github or through my emal:1034565376@qq.com
+Sorry for the imcomplete documentation. Contact me if you have any problems, through github issues or my emal:1034565376@qq.com
 
 
 
