@@ -4,7 +4,7 @@ Contents:
 3. [Datasets](https://github.com/dengdan/seglink#datasets)
 3. [Problems](https://github.com/dengdan/seglink#problems)
 5. [Models](https://github.com/dengdan/seglink#models)
-4. [Test Your own image](https://github.com/dengdan/seglink#test-your-own-image)
+4. [Test Your own images](https://github.com/dengdan/seglink#test-your-own-images)
 5. [Models](https://github.com/dengdan/seglink#training-and-evaluation)
 5. [Some Comments](https://github.com/dengdan/seglink#some-comments)
 <hr>
@@ -84,7 +84,7 @@ They have been trained:
 
 
 
-# Test Your own image
+# Test Your own images
 
 Use the script `test_seglink.py`,  and a shortcut has been created in `script test.sh`:
 
@@ -135,8 +135,7 @@ python visualize_detection_result.py \
     --image=~/dataset/ICDAR2015/Challenge4/ch4_training_images/ \
 
     --det=~/models/seglink/seglink_icdar2015_without_ignored/eval/icdar2015_train/model.ckpt-72885/seg_link_conf_th_0.900000_0.700000/txt \
-
-	--output=~/temp/no-use/seglink_result_512_train
+    --output=~/temp/no-use/seglink_result_512_train
 
 ```
 
@@ -145,9 +144,8 @@ python visualize_detection_result.py \
 
 # Training and evaluation
 
-The training processing requires data processing, e.g. converting data into tfrecords. The converting scripts are put in the `datasets` directory. `train_seglink.py` and `eval_seglink.py` are the training and evaluation scripts respectively. Especially, I have implemented an offline evaluation function for evaluation. It can calculate the Recall/Precision/Hmean as the ICDAR test server, and can be used for cross validation and grid search.  However, the resulting scores may have a  slight difference from those of test sever, but does not matter that much. 
-
- Read and modify them if you want to train your own model. 
+The training processing requires data processing, i.e. converting data into tfrecords. The converting scripts are put in the `datasets` directory. The scrips:`train_seglink.py` and `eval_seglink.py` are the training and evaluation scripts respectively. Especially, I have implemented an offline evaluation function, which calculates the Recall/Precision/Hmean as the ICDAR test server, and can be used for cross validation and grid search.  However, the resulting scores may have slight differences from those of test sever, but it does not matter that much. 
+Sorry for the imcomplete documentation here. Read and modify them if you want to train your own model. 
 
 
 
@@ -167,10 +165,9 @@ Thanks should be given to the authors of the Seglink paper, i.e., Baoguang Shi1 
 * ...
 
 
-
 I am still trying to modify and train a better seglink model. 
 
-Sorry for the imcomplete documentation. Contact me if you have any problems, through github issues or my emal:1034565376@qq.com
+Contact me if you have any problems, through github issues or emal:1034565376@qq.com
 
 
 
