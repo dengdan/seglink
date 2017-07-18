@@ -30,22 +30,22 @@ Convert them into tfrecords format using the scripts in `datasets` if you wanna 
 
 # Problems
 
-The training speed of my seglink is quite slow compared with that described in the paper.  For example, the author of SegLink paper said that a good result can be obtained by training on Synthtext for less than 10W iterations and on IC15-train for less than 1W iterations. However, using my implementation, I have to train on SynthText for about 20W iterations and another more than 10W iterations on IC15-train, to get a competitive result.
+The training speed of my seglink is quite slow compared with that described in the paper.  For example, the authors of SegLink paper said that a good result can be obtained by training on Synthtext for less than 10W iterations and on IC15-train for less than 1W iterations. However, using my implementation, I have to train on SynthText for about 20W iterations and another more than 10W iterations on IC15-train, to get a competitive result.
 
 Several reasons may contribute to the slow convergency of my model:
 
-1. Batch size. I don't have 4 12G-Titans for training, as described in the paper.  I trained my model on two 8G GeForce GTX 1080 or two Titans. 
+1. Batch size. I don't have 4 12G-Titans for training, as described in the paper.  Instead, I trained my model on two 8G GeForce GTX 1080 or two Titans. 
 
 2. Learning Rate. In the paper, 10^-3 and 10^-4 have been used. But I adopted a fixed learning rate of 10^-4.
 
 3. Different initialization model. I used the pretrained VGG model from [SSD-caffe on coco](https://github.com/dengdan/ssd-caffe) , because I thought it better than VGG trained on ImageNet. However, it seems  that my point of view does not hold.
 
-4. I don't know, maybe some other difference from the paper.
+4.Some other differences exists maybe, I am not sure.
 
-Well, Hope the paper authors will release their code, and then I can get an answer to my doubts.
+Well, Hope the authors will release their official code, and then I maybe able to figure out these doubts.
 
 
-# Model
+# Models
 
 Two models trained on SynthText and IC15 train can be downloaded. 
 
@@ -141,7 +141,6 @@ The training processing requires data processing, e.g. converting data into tfre
 # My Comment
 
 Thanks should be given to the authors of the Seglink paper, i.e., Baoguang Shi1 Xiang Bai1, Serge Belongie.
-
 
 
 [EAST](https://arxiv.org/abs/1704.03155) is another paper on text detection accepted into CVPR 2017, and its reported result is better than SegLink. However After having implemented the SegLink algorithm, I don't think the better performance of EAST is caused by its deep direct regression model, because it should have benefited a lot from its network architecture, featue fusion, loss design and some other trick. And I think that there is a huge improvement space for seglink by adopting the following tricks:
