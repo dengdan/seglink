@@ -129,7 +129,7 @@ def test():
             
             image_data_dict = {}
             for seg_conf_th in np.arange(0.7, 0.91, 0.1):
-                for link_conf_th in np.arange(0.5, 0.81, 0.1):
+                for link_conf_th in np.arange(0.5, 0.71, 0.1):
                     config._set_det_th(seg_conf_th, link_conf_th)
                     
                     dump_path = util.io.join_path(logdir, checkpoint_name, 
