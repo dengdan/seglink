@@ -79,7 +79,7 @@ They have been trained:
 
 * 384: GTX 1080, batch_size = 24; 512: Titan, batch_size = 20
 
-
+**Both models performance best at seg_conf_threshold=0.8 and link_conf_threshold=0.5**, well, another different from paper, which takes 0.9 and 0.7 respectively.
 
 # Test Your own images
 
