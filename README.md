@@ -45,7 +45,6 @@ Several reasons may contribute to the slow convergency of my model:
 Well, Hope the paper authors will release their code, and then I can get an answer to my doubts.
 
 
-
 # Model
 
 Two models trained on SynthText and IC15 train can be downloaded. 
@@ -120,13 +119,16 @@ For example:
 
 python visualize_detection_result.py \
 
-	--image=~/dataset/ICDAR2015/Challenge4/ch4_training_images/ \
+    --image=~/dataset/ICDAR2015/Challenge4/ch4_training_images/ \
 
---det=~/models/seglink/seglink_icdar2015_without_ignored/eval/icdar2015_train/model.ckpt-72885/seg_link_conf_th_0.900000_0.700000/txt \
+    --det=~/models/seglink/seglink_icdar2015_without_ignored/eval/icdar2015_train/model.ckpt-72885/seg_link_conf_th_0.900000_0.700000/txt \
 
 	--output=~/temp/no-use/seglink_result_512_train
 
 ```
+
+![](https://github.com/dengdan/seglink/blob/master/img_10_pred.jpg?raw=true)
+![](https://github.com/dengdan/seglink/blob/master/img_31_pred.jpg?raw=true)
 
 # Training and evaluation
 
