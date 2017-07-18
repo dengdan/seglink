@@ -102,7 +102,7 @@ def eval():
         sess_config.gpu_options.per_process_gpu_memory_fraction = FLAGS.gpu_memory_fraction;
     
     checkpoint_dir = util.io.get_dir(FLAGS.checkpoint_path)
-    logdir = util.io.join_path(FLAGS.checkpoint_path, 'eval', FLAGS.dataset_name + '_' +FLAGS.dataset_split_name)
+    logdir = util.io.join_path(FLAGS.checkpoint_path, 'test', FLAGS.dataset_name + '_' +FLAGS.dataset_split_name)
     
     saver = tf.train.Saver()
     if util.io.is_dir(FLAGS.checkpoint_path):
