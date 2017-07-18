@@ -25,7 +25,7 @@ This is a re-implementation of the SegLink text detection algorithm described in
 
 
 
-If any other requirements unmet, just install them by following the error msg.
+If any other requirements unmet, just install them following the error msg.
 
 
 
