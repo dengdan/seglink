@@ -41,7 +41,7 @@ Convert them into tfrecords format using the scripts in `datasets` if you wanna 
 
 # Problems
 
-The training speed of my seglink is quite slow compared with that described in the paper.  For example, the authors of SegLink paper said that a good result can be obtained by training on Synthtext for less than 10W iterations and on IC15-train for less than 1W iterations. However, using my implementation, I have to train on SynthText for about 20W iterations and another more than 10W iterations on IC15-train, to get a competitive result.
+The convergence speed of my seglink is quite slow compared with that described in the paper.  For example, the authors of SegLink paper said that a good result can be obtained by training on Synthtext for less than 10W iterations and on IC15-train for less than 1W iterations. However, using my implementation, I have to train on SynthText for about 20W iterations and another more than 10W iterations on IC15-train, to get a competitive result.
 
 Several reasons may contribute to the slow convergency of my model:
 
