@@ -63,6 +63,7 @@ Two models trained on SynthText and IC15 train can be downloaded.
 1. [seglink-384](https://pan.baidu.com/s/1slqaYux). Trained using image size of  384x384, the same image size as the paper. The  Hmean is comparable to the result reported in the paper. 
 
 ![](http://fromwiz.com/share/resources/b3a92ec9-764c-470f-89a9-958c7cdeea1f/index_files/490589735.png)
+The `hust_orientedText` is the result of paper.
 
 2. [seglink-512](https://pan.baidu.com/s/1slqaYux). Trainied using image size of 512x512,  and one pointer better than 384x384. 
 
