@@ -1,3 +1,11 @@
+Contents:
+1. https://github.com/dengdan/seglink#introduction
+2. https://github.com/dengdan/seglink#installationrequirements
+3. https://github.com/dengdan/seglink#datasets
+4. https://github.com/dengdan/seglink#test-your-own-image
+5. https://github.com/dengdan/seglink#training-and-evaluation
+5. https://github.com/dengdan/seglink#some-comments
+<hr>
 # Introduction
 
 This is a re-implementation of the SegLink text detection algorithm described in the paper [Detecting Oriented Text in Natural Images by Linking Segments, Baoguang Shi, Xiang Bai, Serge Belongie](https://arxiv.org/abs/1703.06520)
