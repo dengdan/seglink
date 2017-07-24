@@ -79,7 +79,7 @@ They have been trained:
 
 * 384: GTX 1080, batch_size = 24; 512: Titan, batch_size = 20
 
-**Both models perform best at `seg_conf_threshold=0.8` and `link_conf_threshold=0.5`**, well, another different from paper, which takes 0.9 and 0.7 respectively.
+**Both models perform best at `seg_conf_threshold=0.8` and `link_conf_threshold=0.5`**, well, another difference from paper, which takes 0.9 and 0.7 respectively.
 
 # Test Your own images
 
@@ -101,7 +101,7 @@ For example:
 
 ```
 
-I have only tested my model on IC15-test, but any other image can be used for test. Just put your images into a directory, and config the path in the command as `DATASET_DIR`.
+I have only tested my models on IC15-test, but any other images can be used for test: just put your images into a directory, and config the path in the command as `DATASET_DIR`.
 
 A bunch of txt files and a zip file is created after test. If you are using IC15-test for testing, you can upload this zip file to the [icdar evaluation server](http://rrc.cvc.uab.es/) directly.
 
