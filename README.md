@@ -19,7 +19,7 @@ This is a re-implementation of the SegLink text detection algorithm described in
 
 1. tensorflow-gpu 1.1.0
 
-2. cv2
+2. cv2. I'm using 2.4.9.1, but some other versions less than 3 should be OK too. If not, try to switch to the version as mine.
 
 3. download the project [pylib](https://github.com/dengdan/pylib) and add the `src` folder to your `PYTHONPATH`
 
