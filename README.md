@@ -150,19 +150,7 @@ Sorry for the imcomplete documentation here. Read and modify them if you want to
 
 Thanks should be given to the authors of the Seglink paper, i.e., Baoguang Shi1 Xiang Bai1, Serge Belongie.
 
-
-[EAST](https://arxiv.org/abs/1704.03155) is another paper on text detection accepted by CVPR 2017, and its reported result is better than that of SegLink. However After having implemented the SegLink algorithm, I don't think the better performance of EAST is rooted in its deep direct regression method, because it should have benefited a lot from its network architecture, feature fusion, loss design and some other tricks. And I think that there is a huge improvement space for seglink by adopting the following tricks:
-
-* Replace the bare VGG16 with resnet, U-net, FPN, etc.
-
-* Use feature fusion as well
-
-* Try hinge loss instead of softmax loss like https://arxiv.org/pdf/1703.08289.pdf
-
-* ...
-
-
-I am still trying to modify and train a better seglink model. 
+[EAST](https://arxiv.org/abs/1704.03155) is another paper on text detection accepted by CVPR 2017, and its reported result is better than that of SegLink. But if they both use same VGG16, their performances are quite similar. 
 
 Contact me if you have any problems, through github issues or emal:1034565376@qq.com
 
