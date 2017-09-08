@@ -80,7 +80,8 @@ with tf.Session() as session:
                      'conv7_1', 'conv7_2', 
                      'conv8_1', 'conv8_2', 
                      'conv9_1', 'conv9_2', 
-                     'conv10_1', 'conv10_2']
+#                      'conv10_1', 'conv10_2'
+                     ]
 
     def check_var(name):
         tf_weights = None
