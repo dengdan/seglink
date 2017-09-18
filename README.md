@@ -47,7 +47,7 @@ Several reasons may contribute to the slow convergency of my model:
 
 1. Batch size. I don't have 4 12G-Titans for training, as described in the paper.  Instead, I trained my model on two 8G GeForce GTX 1080 or two Titans. 
 2. Learning Rate. In the paper, 10^-3 and 10^-4 have been used. But I adopted a fixed learning rate of 10^-4.
-3. Different initialization model. I used the pretrained VGG model from [SSD-caffe on coco](https://github.com/dengdan/ssd-caffe) , because I thought it better than VGG trained on ImageNet. However, it seems  that my point of view does not hold.
+3. Different initialization model. I used the pretrained VGG model from [SSD-caffe on coco](https://gist.github.com/weiliu89/2ed6e13bfd5b57cf81d6) , because I thought it better than VGG trained on ImageNet. However, it seems  that my point of view does not hold.
 4.Some other differences exists maybe, I am not sure.
 
 Well, hope that the authors will release their official code, and then I maybe able to figure out these doubts.
