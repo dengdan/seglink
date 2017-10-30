@@ -50,7 +50,6 @@ Several reasons may contribute to the slow convergency of my model:
 3. Different initialization model. I used the pretrained VGG model from [SSD-caffe on coco](https://gist.github.com/weiliu89/2ed6e13bfd5b57cf81d6) , because I thought it better than VGG trained on ImageNet. However, it seems  that my point of view does not hold.
 4.Some other differences exists maybe, I am not sure.
 
-Well, hope that the authors will release their official code, and then I maybe able to figure out these doubts.
 
 
 # Models
@@ -154,5 +153,6 @@ Thanks should be given to the authors of the Seglink paper, i.e., Baoguang Shi1 
 
 Contact me if you have any problems, through github issues or emal:1034565376@qq.com
 
-
+# Some Notes On Implementation Detail
+How the groundtruth is calculated, in Chinese: http://fromwiz.com/share/s/34GeEW1RFx7x2iIM0z1ZXVvc2yLl5t2fTkEg2ZVhJR2n50xg
 
