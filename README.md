@@ -151,7 +151,7 @@ Thanks should be given to the authors of the Seglink paper, i.e., Baoguang Shi1 
 
 [EAST](https://arxiv.org/abs/1704.03155) is another paper on text detection accepted by CVPR 2017, and its reported result is better than that of SegLink. But if they both use same VGG16, their performances are quite similar. 
 
-Contact me if you have any problems, through github issues or emal:1034565376@qq.com
+Contact me if you have any problems, through github issues.
 
 # Some Notes On Implementation Detail
 How the groundtruth is calculated, in Chinese: http://fromwiz.com/share/s/34GeEW1RFx7x2iIM0z1ZXVvc2yLl5t2fTkEg2ZVhJR2n50xg
