@@ -1,3 +1,6 @@
+Tips: A more recent scene text detection algorithm: [PixelLink](https://arxiv.org/abs/1801.01315) has been implemented here: https://github.com/ZJULearning/pixel_link
+
+
 Contents:
 1. [Introduction](https://github.com/dengdan/seglink#introduction)
 2. [Installation&requirements](https://github.com/dengdan/seglink#installationrequirements)
